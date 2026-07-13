@@ -100,7 +100,8 @@ impl App {
             let result = match origin {
                 RateLimitRefreshOrigin::Recovery
                 | RateLimitRefreshOrigin::ResetConsume { .. }
-                | RateLimitRefreshOrigin::ResetPicker { .. } => {
+                | RateLimitRefreshOrigin::ResetPicker { .. }
+                | RateLimitRefreshOrigin::StatusLineLive => {
                     tokio::time::timeout(RATE_LIMIT_RESET_REQUEST_TIMEOUT, request)
                         .await
                         .map_err(|_| "account/rateLimits/read timed out in TUI".to_string())

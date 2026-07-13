@@ -16,5 +16,5 @@ expression: status_line_popup_snapshot(&mut chat)
   [ ] reasoning             Current reasoning level
   [ ] plan-type             Current ChatGPT subscription label
 
-  monthly 65% | wk 50%
+  monthly 65% left (35% used) | wk 50% left (50% used)
   Press space to toggle; ←/→ to move; enter to confirm and close; esc to close

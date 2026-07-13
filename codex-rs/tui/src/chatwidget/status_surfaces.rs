@@ -36,7 +36,7 @@ pub(super) const TERMINAL_TITLE_SPINNER_INTERVAL: Duration = Duration::from_mill
 /// Time between action-required blink phases in the terminal title.
 const TERMINAL_TITLE_ACTION_REQUIRED_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Claude's status command refreshes once per minute; keep reset countdowns equally fresh.
+/// Claude's status command refreshes once per minute; keep usage and countdowns equally fresh.
 const RATE_LIMIT_COUNTDOWN_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Prefix shown in the terminal title when the agent is blocked on user input.
@@ -337,6 +337,8 @@ impl ChatWidget {
         }
 
         self.status_line_rate_limit_countdown_refresh_at = None;
+        self.app_event_tx
+            .send(AppEvent::RefreshStatusLineRateLimits);
         self.refresh_status_surfaces();
     }
 
@@ -808,23 +810,21 @@ impl ChatWidget {
                 .status_line_context_used_percent()
                 .map(|used| format!("ctx {used}%")),
             StatusLineItem::FiveHourLimit => {
-                let Some((window, is_secondary)) = self
-                    .rate_limit_snapshots_by_limit_id
-                    .get("codex")
-                    .and_then(five_hour_status_window)
-                else {
+                let Some(snapshot) = self.rate_limit_snapshots_by_limit_id.get("codex") else {
                     return Some("5h --".to_string());
+                };
+                let Some((window, is_secondary)) = five_hour_status_window(snapshot) else {
+                    return Some("5h n/a".to_string());
                 };
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
                 self.status_line_limit_display(Some(window), &label)
             }
             StatusLineItem::WeeklyLimit => {
-                let Some((window, is_secondary)) = self
-                    .rate_limit_snapshots_by_limit_id
-                    .get("codex")
-                    .and_then(weekly_status_window)
-                else {
+                let Some(snapshot) = self.rate_limit_snapshots_by_limit_id.get("codex") else {
                     return Some("wk --".to_string());
+                };
+                let Some((window, is_secondary)) = weekly_status_window(snapshot) else {
+                    return Some("wk n/a".to_string());
                 };
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
                 let label = if label == "weekly" { "wk" } else { &label };

@@ -164,6 +164,8 @@ pub(crate) struct PluginRemoteSectionError {
 pub(crate) enum RateLimitRefreshOrigin {
     /// Eagerly fetched after bootstrap for `/status` data and reset availability.
     StartupPrefetch { reset_hint_request_id: u64 },
+    /// Automatic refresh for live footer/title percentages and reset countdowns.
+    StatusLineLive,
     /// User-initiated via `/status`; the `request_id` correlates with the
     /// status card that should be updated when the fetch completes.
     StatusCommand { request_id: u64 },
@@ -537,6 +539,9 @@ pub(crate) enum AppEvent {
         hard_stop_generation: u64,
         result: Result<GetAccountRateLimitsResponse, String>,
     },
+
+    /// Refresh the account limits backing the live footer and terminal title.
+    RefreshStatusLineRateLimits,
 
     /// Open the default token-activity view selected from the `/usage` menu.
     OpenTokenActivity,

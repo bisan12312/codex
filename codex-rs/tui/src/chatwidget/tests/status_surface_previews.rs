@@ -347,7 +347,7 @@ async fn status_surface_thread_usage_previews_omit_unavailable_usd_estimates() {
 }
 
 #[tokio::test]
-async fn status_surface_preview_uses_placeholders_for_unavailable_rate_limit_items() {
+async fn status_surface_preview_reports_not_applicable_rate_limit_items() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
@@ -368,14 +368,14 @@ async fn status_surface_preview_uses_placeholders_for_unavailable_rate_limit_ite
 
     assert_eq!(
         status_preview_line_option(&mut chat, &[StatusLineItem::FiveHourLimit]),
-        Some("5h --".to_string())
+        Some("5h n/a".to_string())
     );
     assert_eq!(
         status_preview_line(
             &mut chat,
             &[StatusLineItem::FiveHourLimit, StatusLineItem::WeeklyLimit]
         ),
-        "5h -- | wk 91%"
+        "5h n/a | wk 91% left (9% used)"
     );
     assert_eq!(
         title_preview_line(
@@ -385,7 +385,7 @@ async fn status_surface_preview_uses_placeholders_for_unavailable_rate_limit_ite
                 TerminalTitleItem::WeeklyLimit
             ],
         ),
-        "5h -- | wk 91%"
+        "5h n/a | wk 91% left (9% used)"
     );
 }
 

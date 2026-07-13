@@ -1264,6 +1264,9 @@ impl App {
                 self.chat_widget
                     .finish_add_credits_nudge_email_request(request_id, result);
             }
+            AppEvent::RefreshStatusLineRateLimits => {
+                self.refresh_rate_limits(app_server, RateLimitRefreshOrigin::StatusLineLive);
+            }
             AppEvent::RateLimitsLoaded {
                 request_id,
                 origin,
@@ -1320,6 +1323,12 @@ impl App {
                             }
                             tui.frame_requester().schedule_frame();
                         }
+                        RateLimitRefreshOrigin::StatusLineLive => {
+                            for snapshot in snapshots {
+                                self.chat_widget.on_rate_limit_snapshot(Some(snapshot));
+                            }
+                            tui.frame_requester().schedule_frame();
+                        }
                         RateLimitRefreshOrigin::ResetConsume { request_id } => {
                             self.chat_widget.finish_post_consume_reset_credits_refresh(
                                 request_id,
@@ -1371,6 +1380,7 @@ impl App {
                                 Err(err),
                             );
                         }
+                        RateLimitRefreshOrigin::StatusLineLive => {}
                         RateLimitRefreshOrigin::ResetConsume { request_id } => {
                             self.chat_widget.finish_post_consume_reset_credits_refresh(
                                 request_id,

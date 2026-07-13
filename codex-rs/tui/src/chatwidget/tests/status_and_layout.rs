@@ -715,7 +715,7 @@ async fn status_line_uses_secondary_fallback_for_unsupported_window() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("secondary usage 50%".to_string())
+        Some("secondary usage 50% left (50% used)".to_string())
     );
 }
 
@@ -745,11 +745,11 @@ async fn status_line_legacy_limit_items_prefer_matching_windows() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("5h 60%".to_string())
+        Some("5h 60% left (40% used)".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("wk 6%".to_string())
+        Some("wk 6% left (94% used)".to_string())
     );
 }
 
@@ -779,16 +779,16 @@ async fn status_line_shows_secondary_non_weekly_when_primary_is_weekly() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("monthly 65%".to_string())
+        Some("monthly 65% left (35% used)".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("wk 6%".to_string())
+        Some("wk 6% left (94% used)".to_string())
     );
 }
 
 #[tokio::test]
-async fn status_line_five_hour_item_uses_placeholder_for_weekly_only_limit() {
+async fn status_line_five_hour_item_reports_not_applicable_for_weekly_only_limit() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
@@ -809,11 +809,11 @@ async fn status_line_five_hour_item_uses_placeholder_for_weekly_only_limit() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("5h --".to_string())
+        Some("5h n/a".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("wk 91%".to_string())
+        Some("wk 91% left (9% used)".to_string())
     );
 }
 
@@ -839,11 +839,11 @@ async fn status_line_single_monthly_primary_uses_weekly_placeholder() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("monthly 65%".to_string())
+        Some("monthly 65% left (35% used)".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("wk --".to_string())
+        Some("wk n/a".to_string())
     );
 }
 
@@ -869,11 +869,11 @@ async fn status_line_secondary_only_non_weekly_limit_uses_primary_placeholder() 
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("5h --".to_string())
+        Some("5h n/a".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("monthly 65%".to_string())
+        Some("monthly 65% left (35% used)".to_string())
     );
 }
 
@@ -3615,6 +3615,34 @@ async fn claude_style_codex_status_line_uses_exact_order_and_wording() {
         "claude_style_codex_status_line",
         status_line_text(&chat).expect("status line")
     );
+    assert!(chat.status_line_rate_limit_countdown_refresh_at.is_some());
+}
+
+#[tokio::test]
+async fn status_line_countdown_refresh_requests_fresh_account_limits() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.tui_status_line = Some(vec!["weekly-limit".to_string()]);
+
+    chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
+        limit_id: None,
+        limit_name: None,
+        primary: Some(RateLimitWindow {
+            used_percent: 5,
+            window_duration_mins: Some(7 * 24 * 60),
+            resets_at: Some(Local::now().timestamp() + 60 * 60),
+        }),
+        secondary: None,
+        credits: None,
+        individual_limit: None,
+        plan_type: Some(PlanType::Pro),
+        rate_limit_reached_type: None,
+    }));
+    while rx.try_recv().is_ok() {}
+
+    chat.status_line_rate_limit_countdown_refresh_at = Some(Instant::now());
+    chat.refresh_rate_limit_countdown_if_due();
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshStatusLineRateLimits));
     assert!(chat.status_line_rate_limit_countdown_refresh_at.is_some());
 }
 
