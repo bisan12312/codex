@@ -391,7 +391,7 @@ async fn status_surface_thread_usage_previews_omit_unavailable_usd_estimates() {
 }
 
 #[tokio::test]
-async fn status_surface_preview_omits_unavailable_rate_limit_items() {
+async fn status_surface_preview_uses_placeholders_for_unavailable_rate_limit_items() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
@@ -413,14 +413,14 @@ async fn status_surface_preview_omits_unavailable_rate_limit_items() {
 
     assert_eq!(
         status_preview_line_option(&mut chat, &[StatusLineItem::FiveHourLimit]),
-        None
+        Some("5h --".to_string())
     );
     assert_eq!(
         status_preview_line(
             &mut chat,
             &[StatusLineItem::FiveHourLimit, StatusLineItem::WeeklyLimit]
         ),
-        "weekly 91% left"
+        "5h -- | wk 91%"
     );
     assert_eq!(
         title_preview_line(
@@ -430,7 +430,7 @@ async fn status_surface_preview_omits_unavailable_rate_limit_items() {
                 TerminalTitleItem::WeeklyLimit
             ],
         ),
-        "weekly 91% left"
+        "5h -- | wk 91%"
     );
 }
 

@@ -72,6 +72,8 @@ pub(crate) struct RateLimitWindowDisplay {
     pub used_percent: f64,
     /// Human-readable local reset time.
     pub resets_at: Option<String>,
+    /// Local reset timestamp used for the footer's live countdown.
+    pub reset_at: Option<DateTime<Local>>,
     /// Window length in minutes when provided by the server.
     pub window_minutes: Option<i64>,
 }
@@ -82,16 +84,18 @@ impl RateLimitWindowDisplay {
         captured_at: DateTime<Local>,
         clock_format: ClockFormat,
     ) -> Self {
-        let resets_at_utc = window
+        let reset_at = window
             .resets_at
             .and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0))
             .map(|dt| dt.with_timezone(&Local));
-        let resets_at =
-            resets_at_utc.map(|dt| format_reset_timestamp(dt, captured_at, clock_format));
+        let resets_at = reset_at
+            .as_ref()
+            .map(|dt| format_reset_timestamp(*dt, captured_at, clock_format));
 
         Self {
             used_percent: f64::from(window.used_percent),
             resets_at,
+            reset_at,
             window_minutes: window.window_duration_mins,
         }
     }
@@ -460,6 +464,7 @@ mod tests {
         RateLimitWindowDisplay {
             used_percent,
             resets_at: Some("soon".to_string()),
+            reset_at: None,
             window_minutes: Some(300),
         }
     }
@@ -522,11 +527,13 @@ mod tests {
             primary: Some(RateLimitWindowDisplay {
                 used_percent: 20.0,
                 resets_at: Some("soon".to_string()),
+                reset_at: None,
                 window_minutes: Some(60),
             }),
             secondary: Some(RateLimitWindowDisplay {
                 used_percent: 40.0,
                 resets_at: Some("later".to_string()),
+                reset_at: None,
                 window_minutes: Some(2 * 60),
             }),
             credits: None,

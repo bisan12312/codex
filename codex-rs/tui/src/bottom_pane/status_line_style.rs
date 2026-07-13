@@ -1,4 +1,4 @@
-//! Theme-derived styling for the configurable footer statusline.
+//! Styling for the configurable footer statusline, including Claude-compatible usage colors.
 
 use ratatui::style::Color;
 use ratatui::style::Style;
@@ -15,7 +15,7 @@ use crate::terminal_palette::effective_stdout_color_level;
 use crate::thread_color::thread_color;
 use codex_protocol::ThreadId;
 
-pub(crate) const STATUS_LINE_SEPARATOR: &str = " · ";
+pub(crate) const STATUS_LINE_SEPARATOR: &str = " | ";
 const STATUS_LINE_COLOR_SATURATION_PERCENT: u16 = 85;
 const STATUS_LINE_COLOR_BRIGHTNESS_PERCENT: u16 = 100;
 
@@ -50,6 +50,7 @@ impl StatusLineAccent {
             | StatusLineItem::ModelWithReasoning
             | StatusLineItem::Provider
             | StatusLineItem::Reasoning => Self::Model,
+            StatusLineItem::PlanType => Self::Metadata,
             StatusLineItem::CurrentDir | StatusLineItem::ProjectRoot => Self::Path,
             StatusLineItem::GitBranch
             | StatusLineItem::PullRequestNumber
@@ -138,8 +139,13 @@ where
         // Paragraph skips control characters, so they must not enter this single row's link offsets.
         text.retain(|ch| !ch.is_control());
         if !line.line.spans.is_empty() {
-            line.line
-                .push_span(STATUS_LINE_SEPARATOR.set_style(secondary_text_style()));
+            // Claude-style separators keep the regular text color when theme colors are on.
+            let separator_style = if use_theme_colors {
+                Style::default().fg(readable_color_on(Color::Reset, /*background*/ None))
+            } else {
+                secondary_text_style()
+            };
+            line.line.push_span(STATUS_LINE_SEPARATOR.set_style(separator_style));
         }
         let style = if use_theme_colors
             && matches!(
@@ -150,11 +156,13 @@ where
         {
             Style::default().fg(thread_color(thread_id))
         } else if use_theme_colors {
-            let accent = StatusLineAccent::for_item(item);
-            soften_status_line_style(
-                theme_style_for_accent(accent)
-                    .unwrap_or_else(|| Style::default().fg(accent.fallback_color())),
-            )
+            claude_usage_style(item, &text).unwrap_or_else(|| {
+                let accent = StatusLineAccent::for_item(item);
+                soften_status_line_style(
+                    theme_style_for_accent(accent)
+                        .unwrap_or_else(|| Style::default().fg(accent.fallback_color())),
+                )
+            })
         } else {
             secondary_text_style()
         };
@@ -178,6 +186,58 @@ where
     }
 
     (!line.line.spans.is_empty()).then_some(line)
+}
+
+fn claude_usage_style(item: StatusLineItem, text: &str) -> Option<Style> {
+    let displayed_percent = text.split_whitespace().find_map(|part| {
+        part.strip_suffix('%')
+            .and_then(|percent| percent.parse::<u16>().ok())
+            .filter(|percent| *percent <= 100)
+    });
+    let used_percent = match item {
+        StatusLineItem::ContextUsed => displayed_percent,
+        StatusLineItem::ContextRemaining
+        | StatusLineItem::FiveHourLimit
+        | StatusLineItem::WeeklyLimit => displayed_percent.map(|percent| 100 - percent),
+        StatusLineItem::ModelName
+        | StatusLineItem::ModelWithReasoning
+        | StatusLineItem::Reasoning
+        | StatusLineItem::PlanType
+        | StatusLineItem::CurrentDir
+        | StatusLineItem::ProjectRoot
+        | StatusLineItem::GitBranch
+        | StatusLineItem::PullRequestNumber
+        | StatusLineItem::BranchChanges
+        | StatusLineItem::Status
+        | StatusLineItem::Permissions
+        | StatusLineItem::ApprovalMode
+        | StatusLineItem::CodexVersion
+        | StatusLineItem::ContextWindowSize
+        | StatusLineItem::UsedTokens
+        | StatusLineItem::TotalInputTokens
+        | StatusLineItem::TotalOutputTokens
+        | StatusLineItem::SessionId
+        | StatusLineItem::FastMode
+        | StatusLineItem::RawOutput
+        | StatusLineItem::ThreadTitle
+        | StatusLineItem::WorkspaceHeadline
+        | StatusLineItem::TaskProgress
+        | StatusLineItem::Hostname
+        | StatusLineItem::ThreadCredits
+        | StatusLineItem::EstimatedThreadCost
+        | StatusLineItem::Daybreak
+        | StatusLineItem::ThreadName
+        | StatusLineItem::Profile
+        | StatusLineItem::Provider => return None,
+    };
+
+    Some(match used_percent {
+        Some(75..=100) => Style::default().red(),
+        Some(50..=74) => Style::default().yellow(),
+        Some(0..=49) => Style::default().green(),
+        None => Style::default(),
+        Some(101..) => unreachable!("usage percent was clamped above"),
+    })
 }
 
 fn soften_status_line_style(mut style: Style) -> Style {
@@ -263,7 +323,7 @@ mod tests {
         .expect("status line")
         .line;
 
-        assert_eq!(line_text(&line), "gpt-5 · /repo · main");
+        assert_eq!(line_text(&line), "gpt-5 | /repo | main");
         assert_eq!(line.spans[0].style.fg, Some(Color::Cyan));
         assert!(!line.spans[0].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(line.spans[2].style.fg, Some(Color::Green));
@@ -273,11 +333,11 @@ mod tests {
     }
 
     #[test]
-    fn status_line_segments_use_secondary_separators_and_theme_styles_first() {
+    fn status_line_segments_use_plain_separators_and_usage_threshold_colors() {
         let line = status_line_from_segments_with_resolver(
             [
                 (StatusLineItem::ModelName, "gpt-5".to_string()),
-                (StatusLineItem::ContextUsed, "Context 12% used".to_string()),
+                (StatusLineItem::ContextUsed, "ctx 12%".to_string()),
             ],
             /*use_theme_colors*/ true,
             /*thread_id*/ None,
@@ -292,7 +352,7 @@ mod tests {
 
         assert_eq!(line.spans[0].style.fg, Some(Color::Red));
         assert!(!line.spans[0].style.add_modifier.contains(Modifier::DIM));
-        assert_eq!(line.spans[1].style, secondary_text_style());
+        assert!(!line.spans[1].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(line.spans[2].style.fg, Some(Color::Green));
         assert!(!line.spans[2].style.add_modifier.contains(Modifier::DIM));
     }
@@ -312,9 +372,10 @@ mod tests {
         .expect("thread usage status line")
         .line;
 
-        assert_eq!(line_text(&line), "5.2 credits · ~$0.21");
+        assert_eq!(line_text(&line), "5.2 credits | ~$0.21");
         assert_eq!(line.spans[0].style, line.spans[2].style);
-        assert_eq!(line.spans[1].style, secondary_text_style());
+        // Claude-style separators stay plain when theme colors are on.
+        assert!(!line.spans[1].style.add_modifier.contains(Modifier::DIM));
     }
 
     #[test]
@@ -351,7 +412,7 @@ mod tests {
         let line = status_line_from_segments_with_resolver(
             [
                 (StatusLineItem::ModelName, "gpt-5".to_string()),
-                (StatusLineItem::ContextUsed, "Context 12% used".to_string()),
+                (StatusLineItem::ContextUsed, "ctx 12%".to_string()),
             ],
             /*use_theme_colors*/ false,
             /*thread_id*/ None,
@@ -361,10 +422,34 @@ mod tests {
         .expect("status line")
         .line;
 
-        assert_eq!(line_text(&line), "gpt-5 · Context 12% used");
+        assert_eq!(line_text(&line), "gpt-5 | ctx 12%");
         assert_eq!(line.spans[0].style, secondary_text_style());
         assert_eq!(line.spans[1].style, secondary_text_style());
         assert_eq!(line.spans[2].style, secondary_text_style());
+    }
+
+    #[test]
+    fn usage_colors_follow_claude_thresholds() {
+        let line = status_line_from_segments_with_resolver(
+            [
+                (StatusLineItem::FiveHourLimit, "5h 80% (4h0m)".to_string()),
+                (StatusLineItem::WeeklyLimit, "wk 50% (3d2h)".to_string()),
+                (StatusLineItem::ContextUsed, "ctx 75%".to_string()),
+                (StatusLineItem::FiveHourLimit, "5h --".to_string()),
+            ],
+            /*use_theme_colors*/ true,
+            /*thread_id*/ None,
+            /*pull_request_url*/ None,
+            |_| Some(Style::default().cyan()),
+        )
+        .expect("status line")
+        .line;
+
+        assert_eq!(line.spans[0].style.fg, Some(Color::Green));
+        assert_eq!(line.spans[2].style.fg, Some(Color::Yellow));
+        assert_eq!(line.spans[4].style.fg, Some(Color::Red));
+        // Unknown usage keeps the terminal's default foreground.
+        assert_eq!(line.spans[6].style.fg, Some(Color::Reset));
     }
 
     #[test]
@@ -502,7 +587,7 @@ mod tests {
             Buffer {
                 area: Rect { x: 0, y: 0, width: 30, height: 1 },
                 content: [
-                    "gpt-5 · ~/code · 12k tokens   ",
+                    "gpt-5 | ~/code | 12k tokens   ",
                 ],
                 styles: [
                     x: 0, y: 0, fg: Cyan, bg: Reset, underline: Reset, modifier: NONE,
