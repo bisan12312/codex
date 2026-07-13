@@ -47,6 +47,7 @@ pub(crate) enum StatusSurfacePreviewItem {
     Reasoning,
     Profile,
     Provider,
+    PlanType,
     TaskProgress,
 }
 
@@ -67,9 +68,9 @@ impl StatusSurfacePreviewItem {
             StatusSurfacePreviewItem::Permissions => "Workspace",
             StatusSurfacePreviewItem::ApprovalMode => "on-request",
             StatusSurfacePreviewItem::ContextRemaining => "Context 0% left",
-            StatusSurfacePreviewItem::ContextUsed => "Context 0% used",
-            StatusSurfacePreviewItem::FiveHourLimit => "primary 0%",
-            StatusSurfacePreviewItem::WeeklyLimit => "secondary 0%",
+            StatusSurfacePreviewItem::ContextUsed => "ctx 0%",
+            StatusSurfacePreviewItem::FiveHourLimit => "5h --",
+            StatusSurfacePreviewItem::WeeklyLimit => "wk --",
             StatusSurfacePreviewItem::CodexVersion => "0.0.0",
             StatusSurfacePreviewItem::ContextWindowSize => "0 window",
             StatusSurfacePreviewItem::UsedTokens => "0 used",
@@ -84,9 +85,10 @@ impl StatusSurfacePreviewItem {
             StatusSurfacePreviewItem::WorkspaceHeadline => "Workspace headline",
             StatusSurfacePreviewItem::Model => "gpt-5.2-codex",
             StatusSurfacePreviewItem::ModelWithReasoning => "gpt-5.2-codex medium",
-            StatusSurfacePreviewItem::Reasoning => "medium",
+            StatusSurfacePreviewItem::Reasoning => "effort:med",
             StatusSurfacePreviewItem::Profile => "profile: <name>",
             StatusSurfacePreviewItem::Provider => "provider: <id>",
+            StatusSurfacePreviewItem::PlanType => "ChatGPT Pro",
             StatusSurfacePreviewItem::TaskProgress => "Tasks 0/0",
         }
     }
@@ -127,6 +129,7 @@ impl StatusSurfacePreviewItem {
             Self::Reasoning,
             Self::Profile,
             Self::Provider,
+            Self::PlanType,
             Self::TaskProgress,
         ]
         .into_iter()
@@ -335,7 +338,7 @@ fn rate_limit_preview_copy(value: &str) -> Option<RateLimitPreviewCopy> {
             name: "daily-limit",
             description: "Remaining usage on the daily usage limit (omitted when unavailable)",
         })
-    } else if value.starts_with("weekly ") {
+    } else if value.starts_with("wk ") || value.starts_with("weekly ") {
         Some(RateLimitPreviewCopy {
             name: "weekly-limit",
             description: "Remaining usage on the weekly usage limit (omitted when unavailable)",

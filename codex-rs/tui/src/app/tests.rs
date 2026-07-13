@@ -2239,9 +2239,9 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
 
     let thread_id = ThreadId::new();
     for (extensions, window, expected) in [
-        (false, 950_000, "950K window · 8 used"),
-        (true, 800_000, "800K window · 8 used"),
-        (false, 900_000, "900K window · 8 used"),
+        (false, 950_000, "950K window | 8 used"),
+        (true, 800_000, "800K window | 8 used"),
+        (false, 900_000, "900K window | 8 used"),
     ] {
         let before = render_bottom_popup(&app.chat_widget, /*width*/ 60);
         app.chat_widget.statusline_feature_enabled = extensions;

@@ -458,7 +458,27 @@ impl ChatWidget {
     ) -> Option<String> {
         let window = window?;
         let remaining = (100.0f64 - window.used_percent).clamp(0.0f64, 100.0f64);
-        Some(format!("{label} {remaining:.0}% left"))
+        let time_left = window
+            .reset_at
+            .as_ref()
+            .and_then(|reset_at| {
+                let seconds = reset_at.signed_duration_since(Local::now()).num_seconds();
+                (seconds > 0).then_some(seconds)
+            })
+            .map(|seconds| {
+                let days = seconds / 86_400;
+                let hours = (seconds % 86_400) / 3_600;
+                let minutes = (seconds % 3_600) / 60;
+                if days > 0 {
+                    format!(" ({days}d{hours}h)")
+                } else if hours > 0 {
+                    format!(" ({hours}h{minutes}m)")
+                } else {
+                    format!(" ({minutes}m)")
+                }
+            })
+            .unwrap_or_default();
+        Some(format!("{label} {remaining:.0}%{time_left}"))
     }
 
     pub(super) fn status_line_reasoning_effort_label(
