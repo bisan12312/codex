@@ -37,6 +37,8 @@ const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
 const USAGE_CHATGPT_LOGIN_REQUIRED: &str = "Sign in with ChatGPT to use /usage.";
+const TESTLOOP1_USAGE: &str = "Usage: /testloop1 <prompt> ;; <condition> [ ;; <goal> ]";
+const TESTLOOP2_USAGE: &str = "Usage: /testloop2 <prompt> ;; <condition>";
 
 impl ChatWidget {
     /// Dispatch a bare slash command and record its staged local-history entry.
@@ -459,6 +461,18 @@ impl ChatWidget {
             SlashCommand::Hooks => {
                 self.add_hooks_output();
             }
+            SlashCommand::Testloop1 => {
+                self.add_info_message(TESTLOOP1_USAGE.to_string(), /*hint*/ None);
+            }
+            SlashCommand::Testloop2 => {
+                self.add_info_message(TESTLOOP2_USAGE.to_string(), /*hint*/ None);
+            }
+            SlashCommand::Testloopstop1 => {
+                self.submit_user_message("testloopstop1".into());
+            }
+            SlashCommand::Testloopstop2 => {
+                self.submit_user_message("testloopstop2".into());
+            }
             SlashCommand::Status => {
                 if self.should_prefetch_rate_limits() {
                     let request_id = self.next_status_refresh_request_id;
@@ -722,6 +736,18 @@ impl ChatWidget {
             SlashCommand::Cd => self.request_working_directory_change(trimmed),
             SlashCommand::Pwd => {
                 self.add_error_message("Usage: /pwd".to_string());
+            }
+            SlashCommand::Testloop1 | SlashCommand::Testloop2 if !trimmed.is_empty() => {
+                if trimmed.contains(";;") {
+                    self.submit_user_message(format!("{} {trimmed}", cmd.command()).into());
+                } else {
+                    let usage = if cmd == SlashCommand::Testloop1 {
+                        TESTLOOP1_USAGE
+                    } else {
+                        TESTLOOP2_USAGE
+                    };
+                    self.add_error_message(usage.to_string());
+                }
             }
             SlashCommand::Usage => {
                 if self.ensure_usage_command_available() {
@@ -1190,6 +1216,10 @@ impl ChatWidget {
             | SlashCommand::Skills
             | SlashCommand::Import
             | SlashCommand::Hooks
+            | SlashCommand::Testloop1
+            | SlashCommand::Testloop2
+            | SlashCommand::Testloopstop1
+            | SlashCommand::Testloopstop2
             | SlashCommand::Title
             | SlashCommand::Statusline
             | SlashCommand::Theme
