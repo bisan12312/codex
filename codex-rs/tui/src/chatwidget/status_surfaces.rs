@@ -882,23 +882,21 @@ impl ChatWidget {
                 .status_line_context_used_percent()
                 .map(|used| format!("ctx {used}%")),
             StatusLineItem::FiveHourLimit => {
-                let Some((window, is_secondary)) = self
-                    .rate_limit_snapshots_by_limit_id
-                    .get("codex")
-                    .and_then(five_hour_status_window)
-                else {
+                let Some(snapshot) = self.rate_limit_snapshots_by_limit_id.get("codex") else {
                     return Some("5h --".to_string());
+                };
+                let Some((window, is_secondary)) = five_hour_status_window(snapshot) else {
+                    return Some("5h n/a".to_string());
                 };
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
                 self.status_line_limit_display(Some(window), &label)
             }
             StatusLineItem::WeeklyLimit => {
-                let Some((window, is_secondary)) = self
-                    .rate_limit_snapshots_by_limit_id
-                    .get("codex")
-                    .and_then(weekly_status_window)
-                else {
+                let Some(snapshot) = self.rate_limit_snapshots_by_limit_id.get("codex") else {
                     return Some("wk --".to_string());
+                };
+                let Some((window, is_secondary)) = weekly_status_window(snapshot) else {
+                    return Some("wk n/a".to_string());
                 };
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
                 let label = if label == "weekly" { "wk" } else { &label };
