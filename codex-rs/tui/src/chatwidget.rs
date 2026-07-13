@@ -579,6 +579,7 @@ pub(crate) struct ChatWidget {
     token_info: Option<TokenUsageInfo>,
     token_usage_pending: bool,
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,
+    status_line_rate_limit_countdown_refresh_at: Option<Instant>,
     refreshing_status_outputs: Vec<(u64, StatusHistoryHandle)>,
     next_status_refresh_request_id: u64,
     refreshing_token_activity_output: Option<tokens::PendingTokenActivityOutput>,
@@ -1209,6 +1210,7 @@ impl ChatWidget {
             pet.schedule_next_frame();
         }
         self.refresh_goal_status_indicator_for_time_tick();
+        self.refresh_rate_limit_countdown_if_due();
         if self.terminal_title_shows_action_required() != self.last_terminal_title_requires_action {
             self.refresh_terminal_title();
         }

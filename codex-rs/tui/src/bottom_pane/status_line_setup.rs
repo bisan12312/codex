@@ -64,6 +64,9 @@ pub(crate) enum StatusLineItem {
     /// Current reasoning level.
     Reasoning,
 
+    /// Current ChatGPT subscription label.
+    PlanType,
+
     /// Current working directory path.
     CurrentDir,
 
@@ -161,6 +164,7 @@ impl StatusLineItem {
             StatusLineItem::ModelName => "Current model name",
             StatusLineItem::ModelWithReasoning => "Current model name with reasoning level",
             StatusLineItem::Reasoning => "Current reasoning level",
+            StatusLineItem::PlanType => "Current ChatGPT subscription label",
             StatusLineItem::CurrentDir => "Current working directory",
             StatusLineItem::ProjectRoot => "Project name (omitted when unavailable)",
             StatusLineItem::Hostname => "Current machine hostname (omitted when unavailable)",
@@ -181,10 +185,10 @@ impl StatusLineItem {
                 "Percentage of context window used (omitted when unknown)"
             }
             StatusLineItem::FiveHourLimit => {
-                "Remaining usage on the primary usage limit (omitted when unavailable)"
+                "Remaining usage on the primary usage limit (shows -- when unavailable)"
             }
             StatusLineItem::WeeklyLimit => {
-                "Remaining usage on the secondary usage limit (omitted when unavailable)"
+                "Remaining usage on the secondary usage limit (shows -- when unavailable)"
             }
             StatusLineItem::CodexVersion => "Codex application version",
             StatusLineItem::ContextWindowSize => {
@@ -219,6 +223,7 @@ impl StatusLineItem {
             StatusLineItem::ModelName => StatusSurfacePreviewItem::Model,
             StatusLineItem::ModelWithReasoning => StatusSurfacePreviewItem::ModelWithReasoning,
             StatusLineItem::Reasoning => StatusSurfacePreviewItem::Reasoning,
+            StatusLineItem::PlanType => StatusSurfacePreviewItem::PlanType,
             StatusLineItem::CurrentDir => StatusSurfacePreviewItem::CurrentDir,
             StatusLineItem::ProjectRoot => StatusSurfacePreviewItem::ProjectRoot,
             StatusLineItem::Hostname => StatusSurfacePreviewItem::Hostname,
@@ -585,7 +590,7 @@ mod tests {
                     /*use_theme_colors*/ true,
                 )
             ),
-            Some("gpt-5 · /repo".to_string())
+            Some("gpt-5 | /repo".to_string())
         );
     }
 
@@ -623,7 +628,7 @@ mod tests {
                     /*use_theme_colors*/ true,
                 )
             ),
-            Some("gpt-5 · feat/awesome-feature".to_string())
+            Some("gpt-5 | feat/awesome-feature".to_string())
         );
     }
 
@@ -667,7 +672,7 @@ mod tests {
                     /*use_theme_colors*/ true,
                 )
             ),
-            Some("gpt-5 · Roadmap cleanup".to_string())
+            Some("gpt-5 | Roadmap cleanup".to_string())
         );
     }
 
@@ -696,7 +701,7 @@ mod tests {
                 ),
                 (
                     StatusLineItem::WeeklyLimit.preview_item(),
-                    "weekly 82% left".to_string(),
+                    "wk 82%".to_string(),
                 ),
             ]),
             AppEventSender::new(tx_raw),

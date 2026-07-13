@@ -1,4 +1,4 @@
-//! Theme-derived styling for the configurable footer statusline.
+//! Styling for the configurable footer statusline, including Claude-compatible usage colors.
 
 use ratatui::prelude::Stylize;
 use ratatui::style::Color;
@@ -9,7 +9,7 @@ use ratatui::text::Span;
 use super::status_line_setup::StatusLineItem;
 use crate::render::highlight::foreground_style_for_scopes;
 
-const STATUS_LINE_SEPARATOR: &str = " · ";
+const STATUS_LINE_SEPARATOR: &str = " | ";
 const STATUS_LINE_COLOR_SATURATION_PERCENT: u16 = 85;
 const STATUS_LINE_COLOR_BRIGHTNESS_PERCENT: u16 = 100;
 
@@ -33,6 +33,7 @@ impl StatusLineAccent {
             StatusLineItem::ModelName
             | StatusLineItem::ModelWithReasoning
             | StatusLineItem::Reasoning => Self::Model,
+            StatusLineItem::PlanType => Self::Metadata,
             StatusLineItem::CurrentDir | StatusLineItem::ProjectRoot => Self::Path,
             StatusLineItem::GitBranch
             | StatusLineItem::PullRequestNumber
@@ -106,13 +107,19 @@ where
     let mut spans = Vec::new();
     for (item, text) in segments {
         if !spans.is_empty() {
-            spans.push(STATUS_LINE_SEPARATOR.dim());
+            spans.push(if use_theme_colors {
+                STATUS_LINE_SEPARATOR.into()
+            } else {
+                STATUS_LINE_SEPARATOR.dim()
+            });
         }
         let style = if use_theme_colors {
-            let accent = StatusLineAccent::for_item(item);
-            soften_status_line_style(
-                theme_style_for_accent(accent).unwrap_or_else(|| accent.fallback_style()),
-            )
+            claude_usage_style(item, &text).unwrap_or_else(|| {
+                let accent = StatusLineAccent::for_item(item);
+                soften_status_line_style(
+                    theme_style_for_accent(accent).unwrap_or_else(|| accent.fallback_style()),
+                )
+            })
         } else {
             Style::default().dim()
         };
@@ -125,6 +132,51 @@ where
     }
 
     (!spans.is_empty()).then(|| Line::from(spans))
+}
+
+fn claude_usage_style(item: StatusLineItem, text: &str) -> Option<Style> {
+    let displayed_percent = text.split_whitespace().find_map(|part| {
+        part.strip_suffix('%')
+            .and_then(|percent| percent.parse::<u16>().ok())
+            .filter(|percent| *percent <= 100)
+    });
+    let used_percent = match item {
+        StatusLineItem::ContextUsed => displayed_percent,
+        StatusLineItem::ContextRemaining
+        | StatusLineItem::FiveHourLimit
+        | StatusLineItem::WeeklyLimit => displayed_percent.map(|percent| 100 - percent),
+        StatusLineItem::ModelName
+        | StatusLineItem::ModelWithReasoning
+        | StatusLineItem::Reasoning
+        | StatusLineItem::PlanType
+        | StatusLineItem::CurrentDir
+        | StatusLineItem::ProjectRoot
+        | StatusLineItem::GitBranch
+        | StatusLineItem::PullRequestNumber
+        | StatusLineItem::BranchChanges
+        | StatusLineItem::Status
+        | StatusLineItem::Permissions
+        | StatusLineItem::ApprovalMode
+        | StatusLineItem::CodexVersion
+        | StatusLineItem::ContextWindowSize
+        | StatusLineItem::UsedTokens
+        | StatusLineItem::TotalInputTokens
+        | StatusLineItem::TotalOutputTokens
+        | StatusLineItem::SessionId
+        | StatusLineItem::FastMode
+        | StatusLineItem::RawOutput
+        | StatusLineItem::ThreadTitle
+        | StatusLineItem::WorkspaceHeadline
+        | StatusLineItem::TaskProgress => return None,
+    };
+
+    Some(match used_percent {
+        Some(75..=100) => Style::default().red(),
+        Some(50..=74) => Style::default().yellow(),
+        Some(0..=49) => Style::default().green(),
+        None => Style::default(),
+        Some(101..) => unreachable!("usage percent was clamped above"),
+    })
 }
 
 fn soften_status_line_style(mut style: Style) -> Style {
@@ -206,7 +258,7 @@ mod tests {
         )
         .expect("status line");
 
-        assert_eq!(line_text(&line), "gpt-5 · /repo · main");
+        assert_eq!(line_text(&line), "gpt-5 | /repo | main");
         assert_eq!(line.spans[0].style.fg, Some(Color::Cyan));
         assert!(!line.spans[0].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(line.spans[2].style.fg, Some(Color::Green));
@@ -216,11 +268,11 @@ mod tests {
     }
 
     #[test]
-    fn status_line_segments_dim_separators_and_use_theme_styles_first() {
+    fn status_line_segments_use_plain_separators_and_usage_threshold_colors() {
         let line = status_line_from_segments_with_resolver(
             [
                 (StatusLineItem::ModelName, "gpt-5".to_string()),
-                (StatusLineItem::ContextUsed, "Context 12% used".to_string()),
+                (StatusLineItem::ContextUsed, "ctx 12%".to_string()),
             ],
             /*use_theme_colors*/ true,
             |accent| match accent {
@@ -232,7 +284,7 @@ mod tests {
 
         assert_eq!(line.spans[0].style.fg, Some(Color::Red));
         assert!(!line.spans[0].style.add_modifier.contains(Modifier::DIM));
-        assert!(line.spans[1].style.add_modifier.contains(Modifier::DIM));
+        assert!(!line.spans[1].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(line.spans[2].style.fg, Some(Color::Green));
         assert!(!line.spans[2].style.add_modifier.contains(Modifier::DIM));
     }
@@ -273,19 +325,39 @@ mod tests {
         let line = status_line_from_segments_with_resolver(
             [
                 (StatusLineItem::ModelName, "gpt-5".to_string()),
-                (StatusLineItem::ContextUsed, "Context 12% used".to_string()),
+                (StatusLineItem::ContextUsed, "ctx 12%".to_string()),
             ],
             /*use_theme_colors*/ false,
             |_| Some(Style::default().red()),
         )
         .expect("status line");
 
-        assert_eq!(line_text(&line), "gpt-5 · Context 12% used");
+        assert_eq!(line_text(&line), "gpt-5 | ctx 12%");
         assert_eq!(line.spans[0].style.fg, None);
         assert!(line.spans[0].style.add_modifier.contains(Modifier::DIM));
         assert!(line.spans[1].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(line.spans[2].style.fg, None);
         assert!(line.spans[2].style.add_modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn usage_colors_follow_claude_thresholds() {
+        let line = status_line_from_segments_with_resolver(
+            [
+                (StatusLineItem::FiveHourLimit, "5h 80% (4h0m)".to_string()),
+                (StatusLineItem::WeeklyLimit, "wk 50% (3d2h)".to_string()),
+                (StatusLineItem::ContextUsed, "ctx 75%".to_string()),
+                (StatusLineItem::FiveHourLimit, "5h --".to_string()),
+            ],
+            /*use_theme_colors*/ true,
+            |_| Some(Style::default().cyan()),
+        )
+        .expect("status line");
+
+        assert_eq!(line.spans[0].style.fg, Some(Color::Green));
+        assert_eq!(line.spans[2].style.fg, Some(Color::Yellow));
+        assert_eq!(line.spans[4].style.fg, Some(Color::Red));
+        assert_eq!(line.spans[6].style.fg, None);
     }
 
     #[test]
