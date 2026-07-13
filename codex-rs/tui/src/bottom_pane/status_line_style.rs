@@ -432,10 +432,16 @@ mod tests {
     fn usage_colors_follow_claude_thresholds() {
         let line = status_line_from_segments_with_resolver(
             [
-                (StatusLineItem::FiveHourLimit, "5h 80% (4h0m)".to_string()),
-                (StatusLineItem::WeeklyLimit, "wk 50% (3d2h)".to_string()),
+                (
+                    StatusLineItem::FiveHourLimit,
+                    "5h 80% left (20% used, 4h0m)".to_string(),
+                ),
+                (
+                    StatusLineItem::WeeklyLimit,
+                    "wk 50% left (50% used, 3d2h0m)".to_string(),
+                ),
                 (StatusLineItem::ContextUsed, "ctx 75%".to_string()),
-                (StatusLineItem::FiveHourLimit, "5h --".to_string()),
+                (StatusLineItem::FiveHourLimit, "5h n/a".to_string()),
             ],
             /*use_theme_colors*/ true,
             /*thread_id*/ None,
