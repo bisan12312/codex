@@ -885,7 +885,14 @@ impl ChatWidget {
                     return Some("5h --".to_string());
                 };
                 let Some((window, is_secondary)) = five_hour_status_window(snapshot) else {
-                    return Some("5h n/a".to_string());
+                    // The backend omits the short window when it is completely unused. A
+                    // weekly Codex window proves this account has a live quota snapshot, so
+                    // the absent five-hour window is fully available until its first use.
+                    return Some(if find_codex_window(snapshot, "weekly").is_some() {
+                        "5h 100%".to_string()
+                    } else {
+                        "5h --".to_string()
+                    });
                 };
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
                 self.status_line_limit_display(Some(window), &label)

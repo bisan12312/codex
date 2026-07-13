@@ -2,5 +2,5 @@
 source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: snapshot
 ---
-status line: monthly 65% left (35% used) | wk 50% left (50% used)
-terminal title: monthly 65% left (35% used) | wk 50% left (50% used)
+status line: monthly 65% | wk 50%
+terminal title: monthly 65% | wk 50%
