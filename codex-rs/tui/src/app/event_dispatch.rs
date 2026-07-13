@@ -248,10 +248,13 @@ impl App {
                         return Ok(AppRunControl::Continue);
                     }
                 };
+                // Phone-started chats can belong to a different project than the Mac TUI that
+                // opens /resume. Start on the global list so those shared local threads are
+                // visible without a hidden CWD filter.
                 match crate::resume_picker::run_resume_picker_from_existing_session_with_app_server(
                     tui,
                     &self.config,
-                    /*show_all*/ false,
+                    /*show_all*/ true,
                     /*include_non_interactive*/ false,
                     picker_app_server,
                     app_server.request_handle(),
