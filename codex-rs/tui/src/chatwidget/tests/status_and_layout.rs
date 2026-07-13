@@ -998,7 +998,7 @@ async fn status_line_uses_secondary_fallback_for_unsupported_window() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("secondary usage 50% left (50% used)".to_string())
+        Some("secondary usage 50%".to_string())
     );
 }
 
@@ -1029,11 +1029,11 @@ async fn status_line_legacy_limit_items_prefer_matching_windows() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("5h 60% left (40% used)".to_string())
+        Some("5h 60%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("wk 6% left (94% used)".to_string())
+        Some("wk 6%".to_string())
     );
 }
 
@@ -1064,16 +1064,16 @@ async fn status_line_shows_secondary_non_weekly_when_primary_is_weekly() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("monthly 65% left (35% used)".to_string())
+        Some("monthly 65%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("wk 6% left (94% used)".to_string())
+        Some("wk 6%".to_string())
     );
 }
 
 #[tokio::test]
-async fn status_line_five_hour_item_reports_not_applicable_for_weekly_only_limit() {
+async fn status_line_five_hour_item_reports_fully_available_for_weekly_only_limit() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
@@ -1095,11 +1095,11 @@ async fn status_line_five_hour_item_reports_not_applicable_for_weekly_only_limit
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("5h n/a".to_string())
+        Some("5h 100%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("wk 91% left (9% used)".to_string())
+        Some("wk 91%".to_string())
     );
 }
 
@@ -1126,7 +1126,7 @@ async fn status_line_single_monthly_primary_uses_weekly_placeholder() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("monthly 65% left (35% used)".to_string())
+        Some("monthly 65%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
@@ -1157,11 +1157,11 @@ async fn status_line_secondary_only_non_weekly_limit_uses_primary_placeholder() 
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("5h n/a".to_string())
+        Some("5h --".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("monthly 65% left (35% used)".to_string())
+        Some("monthly 65%".to_string())
     );
 }
 
