@@ -28,6 +28,10 @@ pub enum SlashCommand {
     Skills,
     Import,
     Hooks,
+    Testloop1,
+    Testloop2,
+    Testloopstop1,
+    Testloopstop2,
     Review,
     Rename,
     New,
@@ -117,6 +121,10 @@ impl SlashCommand {
             SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
+            SlashCommand::Testloop1 => "run testloop1 until its condition is met",
+            SlashCommand::Testloop2 => "run testloop2 until its condition is met",
+            SlashCommand::Testloopstop1 => "stop testloop1",
+            SlashCommand::Testloopstop2 => "stop testloop2",
             SlashCommand::Daemon => "Manage the local background server",
             SlashCommand::Warnings => "view retained warnings and diagnostic details",
             SlashCommand::Status => "show current session configuration and token usage",
@@ -194,6 +202,8 @@ impl SlashCommand {
                 | SlashCommand::Side
                 | SlashCommand::Btw
                 | SlashCommand::Resume
+                | SlashCommand::Testloop1
+                | SlashCommand::Testloop2
         )
     }
 
@@ -282,6 +292,10 @@ impl SlashCommand {
             | SlashCommand::Mention
             | SlashCommand::Skills
             | SlashCommand::Hooks
+            | SlashCommand::Testloop1
+            | SlashCommand::Testloop2
+            | SlashCommand::Testloopstop1
+            | SlashCommand::Testloopstop2
             | SlashCommand::Status
             | SlashCommand::Daemon
             | SlashCommand::Warnings
@@ -337,6 +351,7 @@ mod tests {
     use std::str::FromStr;
 
     use super::SlashCommand;
+    use super::built_in_slash_commands;
 
     #[test]
     fn stop_command_is_canonical_name() {
@@ -373,5 +388,26 @@ mod tests {
             SlashCommand::from_str("approve"),
             Ok(SlashCommand::AutoReview)
         );
+    }
+
+    #[test]
+    fn testloop_commands_are_visible_builtins_with_expected_argument_support() {
+        let builtins = built_in_slash_commands();
+        for (name, command) in [
+            ("testloop1", SlashCommand::Testloop1),
+            ("testloop2", SlashCommand::Testloop2),
+            ("testloopstop1", SlashCommand::Testloopstop1),
+            ("testloopstop2", SlashCommand::Testloopstop2),
+        ] {
+            assert_eq!(command.command(), name);
+            assert_eq!(SlashCommand::from_str(name), Ok(command));
+            assert!(command.available_during_task());
+            assert!(builtins.contains(&(name, command)));
+        }
+
+        assert!(SlashCommand::Testloop1.supports_inline_args());
+        assert!(SlashCommand::Testloop2.supports_inline_args());
+        assert!(!SlashCommand::Testloopstop1.supports_inline_args());
+        assert!(!SlashCommand::Testloopstop2.supports_inline_args());
     }
 }

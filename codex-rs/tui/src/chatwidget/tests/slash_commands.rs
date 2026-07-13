@@ -766,6 +766,58 @@ async fn inline_slash_command_is_available_from_local_recall_after_dispatch() {
 }
 
 #[tokio::test]
+async fn testloop1_slash_command_submits_exact_hook_command_and_is_recallable() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let command = "/testloop1 fix the failing tests ;; all tests pass ;; production ready";
+
+    submit_composer_text(&mut chat, command);
+
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert_eq!(
+        chat.input_queue.queued_user_messages.front().unwrap().text,
+        "testloop1 fix the failing tests ;; all tests pass ;; production ready"
+    );
+    let _ = drain_insert_history(&mut rx);
+    assert_eq!(recall_latest_after_clearing(&mut chat), command);
+}
+
+#[tokio::test]
+async fn testloop1_slash_command_without_separator_fails_with_usage() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    submit_composer_text(&mut chat, "/testloop1 missing separator");
+
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("Usage: /testloop1 <prompt> ;; <condition> [ ;; <goal> ]"),
+        "expected testloop1 usage message, got: {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn testloop_stop_slash_commands_submit_hook_commands() {
+    for (command, submitted) in [
+        (SlashCommand::Testloopstop1, "testloopstop1"),
+        (SlashCommand::Testloopstop2, "testloopstop2"),
+    ] {
+        let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+        chat.dispatch_command(command);
+
+        assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+        assert_eq!(
+            chat.input_queue.queued_user_messages.front().unwrap().text,
+            submitted
+        );
+    }
+}
+
+#[tokio::test]
 async fn goal_slash_command_with_extra_os_emits_set_goal_event() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_feature_enabled(Feature::Goals, /*enabled*/ true);
