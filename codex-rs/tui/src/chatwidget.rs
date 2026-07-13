@@ -595,6 +595,7 @@ pub(crate) struct ChatWidget {
     // Status and polling use account usage reads; response streams may identify meters differently.
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,
     inherited_quota_provider: Option<String>,
+    status_line_rate_limit_countdown_refresh_at: Option<Instant>,
     refreshing_status_outputs: Vec<(u64, StatusHistoryHandle)>,
     next_status_refresh_request_id: u64,
     pending_rate_limit_reset_request_id: Option<u64>,
@@ -1235,6 +1236,7 @@ impl ChatWidget {
             pet.schedule_next_frame();
         }
         self.refresh_goal_status_indicator_for_time_tick();
+        self.refresh_rate_limit_countdown_if_due();
         if self.terminal_title_shows_action_required() != self.last_terminal_title_requires_action {
             self.refresh_terminal_title();
         }

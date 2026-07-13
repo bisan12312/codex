@@ -199,7 +199,7 @@ async fn session_and_settings_sync_server_provider_id() {
     assert!(!chat.daybreak_account_eligible());
     insta::assert_snapshot!(
         status_line_text(&chat).unwrap(),
-        @"profile: work · provider: server-updated"
+        @"profile: work | provider: server-updated"
     );
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(!popup.contains("broader access"));

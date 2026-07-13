@@ -72,6 +72,7 @@ fn stale_monthly_limit_marks_fresh_rolling_snapshot_stale() {
             used_percent: 20.0,
             resets_at_unix: None,
             resets_at: Some("soon".to_string()),
+            reset_at: None,
             window_minutes: Some(300),
         }),
         secondary: None,
@@ -1935,12 +1936,14 @@ async fn transcript_overlay_remeasures_status_after_rate_limit_refresh() {
             normal_model_slug: None,
             captured_at: now,
             primary: Some(RateLimitWindowDisplay {
+                reset_at: None,
                 used_percent: 45.0,
                 resets_at_unix: None,
                 resets_at: Some("soon".to_string()),
                 window_minutes: Some(300),
             }),
             secondary: Some(RateLimitWindowDisplay {
+                reset_at: None,
                 used_percent: 30.0,
                 resets_at_unix: None,
                 resets_at: Some("later".to_string()),

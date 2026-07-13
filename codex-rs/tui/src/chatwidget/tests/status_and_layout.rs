@@ -116,7 +116,7 @@ async fn resumed_session_hides_unknown_token_usage_until_an_update_arrives() {
     chat.refresh_status_line();
     assert_eq!(
         status_line_text(&chat),
-        Some("Context 30% left · Context 70% used · 0 in · 0 out".to_string())
+        Some("Context 30% left | ctx 70% | 0 in | 0 out".to_string())
     );
 }
 
@@ -1001,7 +1001,7 @@ async fn status_line_uses_secondary_fallback_for_unsupported_window() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("secondary usage 50% left".to_string())
+        Some("secondary usage 50%".to_string())
     );
 }
 
@@ -1032,11 +1032,11 @@ async fn status_line_legacy_limit_items_prefer_matching_windows() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("5h 60% left".to_string())
+        Some("5h 60%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("weekly 6% left".to_string())
+        Some("wk 6%".to_string())
     );
 }
 
@@ -1067,16 +1067,16 @@ async fn status_line_shows_secondary_non_weekly_when_primary_is_weekly() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("monthly 65% left".to_string())
+        Some("monthly 65%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("weekly 6% left".to_string())
+        Some("wk 6%".to_string())
     );
 }
 
 #[tokio::test]
-async fn status_line_five_hour_item_omits_weekly_only_limit() {
+async fn status_line_five_hour_item_uses_placeholder_for_weekly_only_limit() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
@@ -1098,16 +1098,16 @@ async fn status_line_five_hour_item_omits_weekly_only_limit() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        None
+        Some("5h --".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("weekly 91% left".to_string())
+        Some("wk 91%".to_string())
     );
 }
 
 #[tokio::test]
-async fn status_line_single_monthly_primary_omits_weekly_limit_item() {
+async fn status_line_single_monthly_primary_uses_weekly_placeholder() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
@@ -1129,16 +1129,16 @@ async fn status_line_single_monthly_primary_omits_weekly_limit_item() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("monthly 65% left".to_string())
+        Some("monthly 65%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        None
+        Some("wk --".to_string())
     );
 }
 
 #[tokio::test]
-async fn status_line_secondary_only_non_weekly_limit_omits_primary_limit_item() {
+async fn status_line_secondary_only_non_weekly_limit_uses_primary_placeholder() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
@@ -1160,11 +1160,11 @@ async fn status_line_secondary_only_non_weekly_limit_omits_primary_limit_item() 
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        None
+        Some("5h --".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("monthly 65% left".to_string())
+        Some("monthly 65%".to_string())
     );
 }
 
@@ -3306,7 +3306,7 @@ async fn status_line_context_used_renders_labeled_percent() {
 
     chat.refresh_status_line();
 
-    assert_eq!(status_line_text(&chat), Some("Context 0% used".to_string()));
+    assert_eq!(status_line_text(&chat), Some("ctx 0%".to_string()));
     assert!(
         drain_insert_history(&mut rx).is_empty(),
         "context-used should remain a valid status line item"
@@ -3339,7 +3339,7 @@ async fn status_line_legacy_context_usage_renders_context_used_percent() {
 
     chat.refresh_status_line();
 
-    assert_eq!(status_line_text(&chat), Some("Context 0% used".to_string()));
+    assert_eq!(status_line_text(&chat), Some("ctx 0%".to_string()));
     assert!(
         drain_insert_history(&mut rx).is_empty(),
         "legacy context-usage should remain a valid status line item"
@@ -3452,7 +3452,7 @@ async fn status_line_thread_credits_and_cost_share_one_backend_request() {
     ));
     assert_eq!(
         status_line_text(&chat),
-        Some("5.2 credits · ~$0.21".to_string())
+        Some("5.2 credits | ~$0.21".to_string())
     );
     assert!(rx.try_recv().is_err(), "idle refresh must not poll");
 }
@@ -3991,6 +3991,51 @@ async fn status_line_estimated_thread_cost_footer_snapshot() {
 }
 
 #[tokio::test]
+async fn claude_style_codex_status_line_uses_exact_order_and_wording() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.6-sol")).await;
+    chat.local_settings.tui.status_line = Some(vec![
+        "plan-type".to_string(),
+        "five-hour-limit".to_string(),
+        "weekly-limit".to_string(),
+        "context-used".to_string(),
+        "reasoning".to_string(),
+        "model".to_string(),
+    ]);
+    chat.local_settings.tui.status_line_use_colors = true;
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::Max));
+    handle_token_count(&mut chat, Some(make_token_info(22_560, 100_000)));
+
+    let now = Local::now().timestamp();
+    chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
+        limit_id: None,
+        limit_name: None,
+        normal_model_slug: None,
+        primary: Some(RateLimitWindow {
+            used_percent: 7,
+            window_duration_mins: Some(5 * 60),
+            resets_at: Some(now + (4 * 60 * 60) + 30),
+        }),
+        secondary: Some(RateLimitWindow {
+            used_percent: 1,
+            window_duration_mins: Some(7 * 24 * 60),
+            resets_at: Some(now + (5 * 24 * 60 * 60) + (2 * 60 * 60) + 30),
+        }),
+        credits: None,
+        individual_limit: None,
+        plan_type: Some(PlanType::Pro),
+        rate_limit_reached_type: None,
+        spend_control_reached: None,
+    }));
+    chat.refresh_status_line();
+
+    insta::assert_snapshot!(
+        "claude_style_codex_status_line",
+        status_line_text(&chat).expect("status line")
+    );
+    assert!(chat.status_line_rate_limit_countdown_refresh_at.is_some());
+}
+
+#[tokio::test]
 async fn status_line_workspace_headline_renders_cached_value() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
@@ -4427,7 +4472,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
 
     assert_eq!(
         status_line_text(&chat),
-        Some(format!("gpt-5.4 xhigh fast · Context 0% used · {test_cwd}"))
+        Some(format!("gpt-5.4 xhigh fast | ctx 0% | {test_cwd}"))
     );
 
     chat.set_model("gpt-5.2");
@@ -4435,7 +4480,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
 
     assert_eq!(
         status_line_text(&chat),
-        Some(format!("gpt-5.2 xhigh · Context 0% used · {test_cwd}"))
+        Some(format!("gpt-5.2 xhigh | ctx 0% | {test_cwd}"))
     );
 }
 
@@ -4466,7 +4511,7 @@ async fn status_line_and_terminal_title_reasoning_render_only_effort() {
     chat.refresh_status_line();
     chat.refresh_terminal_title();
 
-    assert_eq!(status_line_text(&chat), Some("xhigh".to_string()));
+    assert_eq!(status_line_text(&chat), Some("effort:xhigh".to_string()));
     assert_eq!(chat.last_terminal_title, Some("xhigh".to_string()));
 }
 
@@ -4477,13 +4522,13 @@ async fn status_line_reasoning_updates_on_mode_switch_without_manual_refresh() {
     chat.local_settings.tui.status_line = Some(vec!["reasoning".to_string()]);
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
 
-    assert_eq!(status_line_text(&chat), Some("high".to_string()));
+    assert_eq!(status_line_text(&chat), Some("effort:high".to_string()));
 
     let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
         .expect("expected plan collaboration mode");
     chat.set_collaboration_mask(plan_mask);
 
-    assert_eq!(status_line_text(&chat), Some("medium".to_string()));
+    assert_eq!(status_line_text(&chat), Some("effort:med".to_string()));
 }
 
 #[tokio::test]

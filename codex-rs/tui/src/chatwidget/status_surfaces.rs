@@ -38,6 +38,9 @@ pub(super) const TERMINAL_TITLE_SPINNER_INTERVAL: Duration = Duration::from_mill
 /// Time between action-required blink phases in the terminal title.
 const TERMINAL_TITLE_ACTION_REQUIRED_INTERVAL: Duration = Duration::from_secs(1);
 
+/// Claude's status command refreshes once per minute; keep reset countdowns equally fresh.
+const RATE_LIMIT_COUNTDOWN_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
 /// Prefix shown in the terminal title when the agent is blocked on user input.
 const TERMINAL_TITLE_ACTION_REQUIRED_PREFIX: &str = "[ ! ] Action Required";
 const TERMINAL_TITLE_ACTION_REQUIRED_PREFIX_HIDDEN: &str = "[ . ] Action Required";
@@ -70,6 +73,20 @@ impl StatusSurfaceSelections {
             || self
                 .status_line_items
                 .contains(&StatusLineItem::BranchChanges)
+    }
+
+    fn uses_rate_limit_countdown(&self) -> bool {
+        self.status_line_items.iter().any(|item| {
+            matches!(
+                item,
+                StatusLineItem::FiveHourLimit | StatusLineItem::WeeklyLimit
+            )
+        }) || self.terminal_title_items.iter().any(|item| {
+            matches!(
+                item,
+                TerminalTitleItem::FiveHourLimit | TerminalTitleItem::WeeklyLimit
+            )
+        })
     }
 }
 
@@ -286,6 +303,7 @@ impl ChatWidget {
         self.sync_status_surface_shared_state(&selections);
         self.refresh_status_line_from_selections(&selections);
         self.refresh_terminal_title_from_selections(&selections);
+        self.schedule_rate_limit_countdown_refresh(&selections);
     }
 
     /// Recomputes and emits the terminal title from config and runtime state.
@@ -294,6 +312,57 @@ impl ChatWidget {
         self.warn_invalid_terminal_title_items_once(&selections.invalid_terminal_title_items);
         self.sync_status_surface_shared_state(&selections);
         self.refresh_terminal_title_from_selections(&selections);
+        self.schedule_rate_limit_countdown_refresh(&selections);
+    }
+
+    pub(super) fn refresh_rate_limit_countdown_if_due(&mut self) {
+        let Some(deadline) = self.status_line_rate_limit_countdown_refresh_at else {
+            return;
+        };
+        if deadline > Instant::now() {
+            return;
+        }
+
+        self.status_line_rate_limit_countdown_refresh_at = None;
+        self.refresh_status_surfaces();
+    }
+
+    fn schedule_rate_limit_countdown_refresh(&mut self, selections: &StatusSurfaceSelections) {
+        if !selections.uses_rate_limit_countdown() {
+            self.status_line_rate_limit_countdown_refresh_at = None;
+            return;
+        }
+
+        let now = Local::now();
+        let has_future_reset = self
+            .rate_limit_snapshots_by_limit_id
+            .get("codex")
+            .into_iter()
+            .flat_map(|snapshot| [snapshot.primary.as_ref(), snapshot.secondary.as_ref()])
+            .flatten()
+            .any(|window| {
+                window
+                    .reset_at
+                    .as_ref()
+                    .is_some_and(|reset_at| reset_at > &now)
+            });
+        if !has_future_reset {
+            self.status_line_rate_limit_countdown_refresh_at = None;
+            return;
+        }
+
+        let now = Instant::now();
+        if self
+            .status_line_rate_limit_countdown_refresh_at
+            .is_some_and(|deadline| deadline > now)
+        {
+            return;
+        }
+
+        let deadline = now + RATE_LIMIT_COUNTDOWN_REFRESH_INTERVAL;
+        self.status_line_rate_limit_countdown_refresh_at = Some(deadline);
+        self.frame_requester
+            .schedule_frame_in(RATE_LIMIT_COUNTDOWN_REFRESH_INTERVAL);
     }
 
     fn terminal_title_requires_action(&self) -> bool {
@@ -744,13 +813,43 @@ impl ChatWidget {
                 let service_tier = self.processing_tier_display_name().map(str::to_lowercase);
                 Some(self.model_with_reasoning_display_name(service_tier.as_deref()))
             }
-            StatusLineItem::Reasoning => Some(self.reasoning_display_name()),
+            StatusLineItem::Reasoning => {
+                let effort = self.reasoning_display_name();
+                let effort = if effort == "medium" { "med" } else { &effort };
+                Some(format!("effort:{effort}"))
+            }
             StatusLineItem::Profile => self
                 .status_line_config_profile()
                 .map(|name| format!("profile: {name}")),
             StatusLineItem::Provider => self
                 .thread_id
                 .map(|_| format!("provider: {}", self.config.model_provider_id)),
+            StatusLineItem::PlanType => Some(
+                match self.plan_type {
+                    Some(PlanType::Plus) => "ChatGPT Plus",
+                    Some(PlanType::Pro) => "ChatGPT Pro",
+                    Some(PlanType::Team) => "ChatGPT Team",
+                    Some(PlanType::Business) => "ChatGPT Business",
+                    Some(PlanType::Edu | PlanType::EduPlus | PlanType::EduPro) => "ChatGPT Edu",
+                    Some(PlanType::Enterprise) => "ChatGPT Enterprise",
+                    Some(
+                        PlanType::Free
+                        | PlanType::Go
+                        | PlanType::ProLite
+                        | PlanType::ProMax
+                        | PlanType::SelfServeBusinessProLite
+                        | PlanType::SelfServeBusinessUsageBased
+                        | PlanType::Ent26
+                        | PlanType::EnterpriseCbpAutomation
+                        | PlanType::EnterpriseCbpUsageBased
+                        | PlanType::Sci
+                        | PlanType::SciPlus
+                        | PlanType::Unknown,
+                    )
+                    | None => "ChatGPT",
+                }
+                .to_string(),
+            ),
             StatusLineItem::CurrentDir => Some(self.workspace_directory_display()),
             StatusLineItem::ProjectRoot => self.status_line_project_root_name(),
             StatusLineItem::Hostname => os_host_name(),
@@ -788,22 +887,29 @@ impl ChatWidget {
                 .map(|remaining| format!("Context {remaining}% left")),
             StatusLineItem::ContextUsed => self
                 .status_line_context_used_percent()
-                .map(|used| format!("Context {used}% used")),
+                .map(|used| format!("ctx {used}%")),
             StatusLineItem::FiveHourLimit => {
-                let (window, is_secondary) = self
+                let Some((window, is_secondary)) = self
                     .rate_limit_snapshots_by_limit_id
                     .get("codex")
-                    .and_then(five_hour_status_window)?;
+                    .and_then(five_hour_status_window)
+                else {
+                    return Some("5h --".to_string());
+                };
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
                 self.status_line_limit_display(Some(window), &label)
             }
             StatusLineItem::WeeklyLimit => {
-                let (window, is_secondary) = self
+                let Some((window, is_secondary)) = self
                     .rate_limit_snapshots_by_limit_id
                     .get("codex")
-                    .and_then(weekly_status_window)?;
+                    .and_then(weekly_status_window)
+                else {
+                    return Some("wk --".to_string());
+                };
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
-                self.status_line_limit_display(Some(window), &label)
+                let label = if label == "weekly" { "wk" } else { &label };
+                self.status_line_limit_display(Some(window), label)
             }
             StatusLineItem::CodexVersion => Some(CODEX_CLI_VERSION.to_string()),
             StatusLineItem::ContextWindowSize => self
@@ -899,6 +1005,7 @@ impl ChatWidget {
             StatusSurfacePreviewItem::Reasoning => StatusLineItem::Reasoning,
             StatusSurfacePreviewItem::Profile => StatusLineItem::Profile,
             StatusSurfacePreviewItem::Provider => StatusLineItem::Provider,
+            StatusSurfacePreviewItem::PlanType => StatusLineItem::PlanType,
         };
         self.status_line_value_for_item(status_line_item)
     }
