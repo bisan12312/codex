@@ -423,19 +423,15 @@ impl ChatWidget {
                 let hours = (seconds % 86_400) / 3_600;
                 let minutes = (seconds % 3_600) / 60;
                 if days > 0 {
-                    format!("{days}d{hours}h{minutes}m")
+                    format!(" ({days}d{hours}h)")
                 } else if hours > 0 {
-                    format!("{hours}h{minutes}m")
+                    format!(" ({hours}h{minutes}m)")
                 } else {
-                    format!("{minutes}m")
+                    format!(" ({minutes}m)")
                 }
             })
-            .map(|countdown| format!(", {countdown}"))
             .unwrap_or_default();
-        Some(format!(
-            "{label} {remaining:.0}% left ({:.0}% used{time_left})",
-            window.used_percent
-        ))
+        Some(format!("{label} {remaining:.0}%{time_left}"))
     }
 
     pub(super) fn status_line_reasoning_effort_label(
