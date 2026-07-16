@@ -1234,6 +1234,9 @@ impl App {
             AppEvent::RefreshStatusLineWorkspaceHeadline { request_id } => {
                 self.refresh_status_line_workspace_headline(app_server, request_id);
             }
+            AppEvent::RefreshStatusLineResetForecast { request_id } => {
+                self.refresh_status_line_reset_forecast(request_id);
+            }
             AppEvent::OpenThreadGoalMenu { thread_id } => {
                 self.open_thread_goal_menu(app_server, thread_id).await;
             }
@@ -2880,6 +2883,14 @@ impl App {
                 if self
                     .chat_widget
                     .set_status_line_workspace_headline(request_id, result)
+                {
+                    tui.frame_requester().schedule_frame();
+                }
+            }
+            AppEvent::StatusLineResetForecastUpdated { request_id, result } => {
+                if self
+                    .chat_widget
+                    .set_status_line_reset_forecast(request_id, result)
                 {
                     tui.frame_requester().schedule_frame();
                 }

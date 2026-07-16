@@ -13,6 +13,10 @@ expression: commands
 /skills - use skills to improve how Codex performs specific tasks
 /import - import setup, this project, and recent chats from Claude Code
 /hooks - view and manage lifecycle hooks
+/testloop1 - run testloop1 until its condition is met
+/testloop2 - run testloop2 until its condition is met
+/testloopstop1 - stop testloop1
+/testloopstop2 - stop testloop2
 /review - review my current changes and find issues
 /rename - rename the current thread
 /new - start a new chat during a conversation

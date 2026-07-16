@@ -25,6 +25,15 @@ fn take_workspace_headline_request_id(
     }
 }
 
+fn take_reset_forecast_request_id(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> u64 {
+    while let Ok(event) = rx.try_recv() {
+        if let AppEvent::RefreshStatusLineResetForecast { request_id } = event {
+            return request_id;
+        }
+    }
+    panic!("expected reset-forecast refresh request");
+}
+
 /// Receiving a token usage update without usage clears the context indicator.
 #[tokio::test]
 async fn token_count_none_resets_context_indicator() {
@@ -3644,6 +3653,40 @@ async fn status_line_countdown_refresh_requests_fresh_account_limits() {
 
     assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshStatusLineRateLimits));
     assert!(chat.status_line_rate_limit_countdown_refresh_at.is_some());
+}
+
+#[tokio::test]
+async fn status_line_reset_forecast_refreshes_and_fails_loudly() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    while rx.try_recv().is_ok() {}
+    chat.config.tui_status_line = Some(vec!["reset-forecast".to_string()]);
+
+    chat.refresh_status_line();
+
+    assert_eq!(status_line_text(&chat), Some("reset? loading".to_string()));
+    let request_id = take_reset_forecast_request_id(&mut rx);
+    let forecast = crate::reset_forecast::ResetForecast::new(
+        /*score*/ 51,
+        /*reset_announced*/ false,
+        Duration::from_secs(/*secs*/ 60),
+    )
+    .expect("valid forecast");
+    assert!(chat.set_status_line_reset_forecast(request_id, Ok(forecast)));
+
+    insta::assert_snapshot!(
+        "will_codex_reset_forecast_footer",
+        status_line_text(&chat).expect("status line")
+    );
+    assert!(chat.status_line_reset_forecast_refresh_at.is_some());
+
+    chat.status_line_reset_forecast_refresh_at = Some(Instant::now());
+    chat.refresh_status_line_if_reset_forecast_due();
+    let retry_request_id = take_reset_forecast_request_id(&mut rx);
+    assert!(chat.set_status_line_reset_forecast(
+        retry_request_id,
+        Err("forecast endpoint unavailable".to_string())
+    ));
+    assert_eq!(status_line_text(&chat), Some("reset? ERROR".to_string()));
 }
 
 #[tokio::test]

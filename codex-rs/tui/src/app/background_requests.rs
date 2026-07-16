@@ -218,6 +218,14 @@ impl App {
         });
     }
 
+    pub(super) fn refresh_status_line_reset_forecast(&mut self, request_id: u64) {
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let result = crate::reset_forecast::fetch_reset_forecast().await;
+            app_event_tx.send(AppEvent::StatusLineResetForecastUpdated { request_id, result });
+        });
+    }
+
     pub(super) fn send_add_credits_nudge_email(
         &mut self,
         app_server: &AppServerSession,
