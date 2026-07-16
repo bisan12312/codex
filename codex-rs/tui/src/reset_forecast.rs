@@ -10,12 +10,13 @@ use chrono::DateTime;
 use chrono::Utc;
 use serde::Deserialize;
 
-pub(crate) const RESET_FORECAST_RETRY_INTERVAL: Duration = Duration::from_secs(60);
+pub(crate) const RESET_FORECAST_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 const FORECAST_API_URL: &str = "https://www.willcodexquotareset.com/api/forecast";
 const FORECAST_HORIZON_HOURS: u8 = 48;
 const ANNOUNCED_FORECAST_HORIZON_HOURS: u8 = 24;
 const FORECAST_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const MIN_FORECAST_REFRESH_DELAY: Duration = Duration::from_secs(60);
 const MAX_SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(2 * 60 * 60);
 const USER_AGENT: &str = "codex-reset-forecast-statusline/1.0";
 
@@ -136,8 +137,8 @@ fn validate_forecast(
         .next_refresh_at
         .signed_duration_since(now)
         .to_std()
-        .unwrap_or(RESET_FORECAST_RETRY_INTERVAL)
-        .max(RESET_FORECAST_RETRY_INTERVAL);
+        .unwrap_or(MIN_FORECAST_REFRESH_DELAY)
+        .max(MIN_FORECAST_REFRESH_DELAY);
 
     ResetForecast::new(
         payload.forecast.score,

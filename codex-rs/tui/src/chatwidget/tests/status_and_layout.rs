@@ -4063,11 +4063,21 @@ async fn status_line_reset_forecast_refreshes_and_fails_loudly() {
     chat.status_line_reset_forecast_refresh_at = Some(Instant::now());
     chat.refresh_status_line_if_reset_forecast_due();
     let retry_request_id = take_reset_forecast_request_id(&mut rx);
+    let retry_started_at = Instant::now();
     assert!(chat.set_status_line_reset_forecast(
         retry_request_id,
         Err("forecast endpoint unavailable".to_string())
     ));
     assert_eq!(status_line_text(&chat), Some("reset? ERROR".to_string()));
+    let retry_after = chat
+        .status_line_reset_forecast_refresh_at
+        .expect("error should schedule a retry")
+        .saturating_duration_since(retry_started_at);
+    assert!(retry_after >= crate::reset_forecast::RESET_FORECAST_RETRY_INTERVAL);
+    assert!(
+        retry_after
+            <= crate::reset_forecast::RESET_FORECAST_RETRY_INTERVAL + Duration::from_secs(1)
+    );
 }
 
 #[tokio::test]
