@@ -75,6 +75,11 @@ impl StatusSurfaceSelections {
                 .contains(&StatusLineItem::BranchChanges)
     }
 
+    fn uses_reset_forecast(&self) -> bool {
+        self.status_line_items
+            .contains(&StatusLineItem::ResetForecast)
+    }
+
     fn uses_rate_limit_countdown(&self) -> bool {
         self.status_line_items.iter().any(|item| {
             matches!(
@@ -194,6 +199,13 @@ impl ChatWidget {
             self.ensure_thread_usage_requested();
         } else {
             self.cancel_thread_usage_polling();
+        }
+        if !selections.uses_reset_forecast() {
+            self.status_line_reset_forecast = None;
+            self.status_line_reset_forecast_pending_request_id = None;
+            self.status_line_reset_forecast_refresh_at = None;
+        } else {
+            self.request_status_line_reset_forecast_if_due(Instant::now());
         }
     }
 
@@ -794,6 +806,79 @@ impl ChatWidget {
         true
     }
 
+    fn request_status_line_reset_forecast_if_due(&mut self, now: Instant) {
+        if !self.status_line_reset_forecast_should_fetch(now) {
+            return;
+        }
+        let request_id = self.next_status_line_reset_forecast_request_id;
+        self.next_status_line_reset_forecast_request_id = self
+            .next_status_line_reset_forecast_request_id
+            .wrapping_add(/*rhs*/ 1);
+        self.status_line_reset_forecast_pending_request_id = Some(request_id);
+        self.status_line_reset_forecast_refresh_at = None;
+        if self.status_line_reset_forecast.is_none() {
+            self.status_line_reset_forecast = Some(ResetForecastState::Loading);
+        }
+        self.app_event_tx
+            .send(AppEvent::RefreshStatusLineResetForecast { request_id });
+    }
+
+    fn status_line_reset_forecast_should_fetch(&self, now: Instant) -> bool {
+        if self.status_line_reset_forecast_pending_request_id.is_some() {
+            return false;
+        }
+
+        self.status_line_reset_forecast_refresh_at
+            .is_none_or(|refresh_at| refresh_at <= now)
+    }
+
+    pub(super) fn refresh_status_line_if_reset_forecast_due(&mut self) {
+        let now = Instant::now();
+        if self.status_line_reset_forecast_should_fetch(now)
+            && self
+                .status_line_items_with_invalids()
+                .0
+                .contains(&StatusLineItem::ResetForecast)
+        {
+            self.refresh_status_line();
+        }
+    }
+
+    pub(crate) fn set_status_line_reset_forecast(
+        &mut self,
+        request_id: u64,
+        result: Result<crate::reset_forecast::ResetForecast, String>,
+    ) -> bool {
+        if self.status_line_reset_forecast_pending_request_id != Some(request_id) {
+            return false;
+        }
+        self.status_line_reset_forecast_pending_request_id = None;
+
+        let refresh_after = match result {
+            Ok(forecast) => {
+                let refresh_after = forecast.refresh_after();
+                self.status_line_reset_forecast = Some(ResetForecastState::Available(forecast));
+                refresh_after
+            }
+            Err(err) => {
+                tracing::error!(error = %err, "failed to fetch Will Codex Reset forecast");
+                self.status_line_reset_forecast = Some(ResetForecastState::Failed);
+                crate::reset_forecast::RESET_FORECAST_RETRY_INTERVAL
+            }
+        };
+        self.status_line_reset_forecast_refresh_at = Some(Instant::now() + refresh_after);
+
+        if self
+            .status_line_items_with_invalids()
+            .0
+            .contains(&StatusLineItem::ResetForecast)
+        {
+            self.frame_requester.schedule_frame_in(refresh_after);
+        }
+        self.refresh_status_line();
+        true
+    }
+
     /// Resolves a display string for one configured status-line item.
     ///
     /// Returning `None` means "omit this item for now", not "configuration error". Callers rely on
@@ -909,6 +994,10 @@ impl ChatWidget {
                 let label = if label == "weekly" { "wk" } else { &label };
                 self.status_line_limit_display(Some(window), label)
             }
+            StatusLineItem::ResetForecast => self
+                .status_line_reset_forecast
+                .as_ref()
+                .map(ResetForecastState::status_line_text),
             StatusLineItem::CodexVersion => Some(CODEX_CLI_VERSION.to_string()),
             StatusLineItem::ContextWindowSize => self
                 .status_line_context_window_size()
@@ -986,6 +1075,7 @@ impl ChatWidget {
             StatusSurfacePreviewItem::ContextUsed => StatusLineItem::ContextUsed,
             StatusSurfacePreviewItem::FiveHourLimit => StatusLineItem::FiveHourLimit,
             StatusSurfacePreviewItem::WeeklyLimit => StatusLineItem::WeeklyLimit,
+            StatusSurfacePreviewItem::ResetForecast => StatusLineItem::ResetForecast,
             StatusSurfacePreviewItem::CodexVersion => StatusLineItem::CodexVersion,
             StatusSurfacePreviewItem::ContextWindowSize => StatusLineItem::ContextWindowSize,
             StatusSurfacePreviewItem::UsedTokens => StatusLineItem::UsedTokens,
