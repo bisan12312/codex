@@ -61,6 +61,7 @@ use crate::mention_codec::encode_history_mentions_at_elements;
 use crate::model_catalog::ModelCatalog;
 use crate::multi_agents;
 use crate::multi_agents::AgentMetadata;
+use crate::reset_forecast::ResetForecastState;
 use crate::session_state::SessionNetworkProxyRuntime;
 use crate::session_state::ThreadSessionState;
 use crate::status::RateLimitWindowDisplay;
@@ -596,6 +597,10 @@ pub(crate) struct ChatWidget {
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,
     inherited_quota_provider: Option<String>,
     status_line_rate_limit_countdown_refresh_at: Option<Instant>,
+    status_line_reset_forecast: Option<ResetForecastState>,
+    status_line_reset_forecast_pending_request_id: Option<u64>,
+    next_status_line_reset_forecast_request_id: u64,
+    status_line_reset_forecast_refresh_at: Option<Instant>,
     refreshing_status_outputs: Vec<(u64, StatusHistoryHandle)>,
     next_status_refresh_request_id: u64,
     pending_rate_limit_reset_request_id: Option<u64>,
@@ -1237,6 +1242,7 @@ impl ChatWidget {
         }
         self.refresh_goal_status_indicator_for_time_tick();
         self.refresh_rate_limit_countdown_if_due();
+        self.refresh_status_line_if_reset_forecast_due();
         if self.terminal_title_shows_action_required() != self.last_terminal_title_requires_action {
             self.refresh_terminal_title();
         }

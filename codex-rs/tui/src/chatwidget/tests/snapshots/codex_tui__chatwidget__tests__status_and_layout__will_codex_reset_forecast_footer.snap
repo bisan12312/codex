@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/status_and_layout.rs
+expression: "status_line_text(&chat).expect(\"status line\")"
+---
+reset? 51% ≤48h

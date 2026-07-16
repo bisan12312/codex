@@ -18,6 +18,7 @@
 //! - Approval mode
 //! - Context usage (remaining %, used %, window size)
 //! - Usage limits (primary, secondary)
+//! - Unofficial quota-reset forecast
 //! - Session info (thread title, thread ID, tokens used)
 //! - Application version
 
@@ -117,6 +118,9 @@ pub(crate) enum StatusLineItem {
     /// Remaining usage on the secondary rate limit.
     WeeklyLimit,
 
+    /// Unofficial probability of a surprise Codex quota reset.
+    ResetForecast,
+
     /// Codex application version.
     CodexVersion,
 
@@ -215,6 +219,9 @@ impl StatusLineItem {
             StatusLineItem::WeeklyLimit => {
                 "Remaining usage on the secondary usage limit (shows -- when unavailable)"
             }
+            StatusLineItem::ResetForecast => {
+                "Unofficial Will Codex Reset probability and forecast horizon"
+            }
             StatusLineItem::CodexVersion => "Codex application version",
             StatusLineItem::ContextWindowSize => {
                 "Total context window size in tokens (omitted when unknown)"
@@ -266,6 +273,7 @@ impl StatusLineItem {
             StatusLineItem::ContextUsed => StatusSurfacePreviewItem::ContextUsed,
             StatusLineItem::FiveHourLimit => StatusSurfacePreviewItem::FiveHourLimit,
             StatusLineItem::WeeklyLimit => StatusSurfacePreviewItem::WeeklyLimit,
+            StatusLineItem::ResetForecast => StatusSurfacePreviewItem::ResetForecast,
             StatusLineItem::CodexVersion => StatusSurfacePreviewItem::CodexVersion,
             StatusLineItem::ContextWindowSize => StatusSurfacePreviewItem::ContextWindowSize,
             StatusLineItem::UsedTokens => StatusSurfacePreviewItem::UsedTokens,

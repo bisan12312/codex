@@ -1051,6 +1051,11 @@ pub(crate) enum AppEvent {
         request_id: Uuid,
     },
 
+    /// Fetch the unofficial Will Codex Reset forecast for the status line.
+    RefreshStatusLineResetForecast {
+        request_id: u64,
+    },
+
     /// Commit settled asynchronous usage output after active-output barriers clear.
     CommitPendingUsageOutput,
 
@@ -1915,6 +1920,11 @@ pub(crate) enum AppEvent {
     StatusLineWorkspaceHeadlineUpdated {
         request_id: Uuid,
         result: Result<crate::workspace_messages::WorkspaceHeadlineFetchResult, String>,
+    },
+    /// Async update of the unofficial quota-reset forecast for status line rendering.
+    StatusLineResetForecastUpdated {
+        request_id: u64,
+        result: Result<crate::reset_forecast::ResetForecast, String>,
     },
     /// Apply a user-confirmed status-line item ordering/selection.
     StatusLineSetup {

@@ -69,7 +69,9 @@ impl StatusLineAccent {
             | StatusLineItem::TotalOutputTokens
             | StatusLineItem::ThreadCredits
             | StatusLineItem::EstimatedThreadCost => Self::Usage,
-            StatusLineItem::FiveHourLimit | StatusLineItem::WeeklyLimit => Self::Limit,
+            StatusLineItem::FiveHourLimit
+            | StatusLineItem::WeeklyLimit
+            | StatusLineItem::ResetForecast => Self::Limit,
             StatusLineItem::CodexVersion
             | StatusLineItem::Hostname
             | StatusLineItem::SessionId
@@ -200,7 +202,7 @@ fn claude_usage_style(item: StatusLineItem, text: &str) -> Option<Style> {
             .filter(|percent| *percent <= 100)
     });
     let used_percent = match item {
-        StatusLineItem::ContextUsed => displayed_percent,
+        StatusLineItem::ContextUsed | StatusLineItem::ResetForecast => displayed_percent,
         StatusLineItem::ContextRemaining
         | StatusLineItem::FiveHourLimit
         | StatusLineItem::WeeklyLimit => displayed_percent.map(|percent| 100 - percent),
