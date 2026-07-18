@@ -4125,6 +4125,43 @@ async fn status_line_reset_forecast_refreshes_and_marks_last_good_value_stale() 
 }
 
 #[tokio::test]
+async fn status_line_reset_forecast_rearms_deadline_after_competing_draw() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(16);
+    chat.frame_requester = FrameRequester::new(draw_tx);
+    while rx.try_recv().is_ok() {}
+    chat.config.tui_status_line = Some(vec!["reset-forecast".to_string()]);
+
+    chat.refresh_status_line();
+    let request_id = take_reset_forecast_request_id(&mut rx);
+    let forecast = crate::reset_forecast::ResetForecast::new(
+        /*score*/ 95,
+        /*reset_announced*/ false,
+        Duration::from_millis(/*millis*/ 100),
+    )
+    .expect("valid forecast");
+    assert!(chat.set_status_line_reset_forecast(request_id, Ok(forecast)));
+
+    // FrameScheduler intentionally coalesces the later forecast draw into this
+    // immediate draw. The pre-draw tick must re-arm the forecast deadline.
+    chat.frame_requester.schedule_frame();
+    tokio::task::yield_now().await;
+    tokio::time::timeout(Duration::from_millis(100), draw_rx.recv())
+        .await
+        .expect("timed out waiting for competing draw")
+        .expect("competing draw channel should remain open");
+    chat.pre_draw_tick();
+    tokio::task::yield_now().await;
+
+    tokio::time::timeout(Duration::from_millis(500), draw_rx.recv())
+        .await
+        .expect("forecast deadline should be re-armed after the competing draw")
+        .expect("forecast draw channel should remain open");
+    chat.pre_draw_tick();
+    take_reset_forecast_request_id(&mut rx);
+}
+
+#[tokio::test]
 async fn status_line_workspace_headline_renders_cached_value() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
