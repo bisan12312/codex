@@ -823,14 +823,26 @@ impl ChatWidget {
     }
 
     pub(super) fn refresh_status_line_if_reset_forecast_due(&mut self) {
-        let now = Instant::now();
-        if self.status_line_reset_forecast_should_fetch(now)
-            && self
-                .status_line_items_with_invalids()
-                .0
-                .contains(&StatusLineItem::ResetForecast)
+        if !self
+            .status_line_items_with_invalids()
+            .0
+            .contains(&StatusLineItem::ResetForecast)
         {
+            return;
+        }
+
+        let now = Instant::now();
+        if self.status_line_reset_forecast_should_fetch(now) {
             self.refresh_status_line();
+        } else if self.status_line_reset_forecast_pending_request_id.is_none()
+            && let Some(refresh_at) = self.status_line_reset_forecast_refresh_at
+            && refresh_at > now
+        {
+            // FrameScheduler coalesces a later draw into any earlier pending draw.
+            // Re-arm this deadline on every pre-draw so unrelated UI activity
+            // cannot permanently consume the one wake-up that refreshes the forecast.
+            self.frame_requester
+                .schedule_frame_in(refresh_at.duration_since(now));
         }
     }
 
