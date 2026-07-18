@@ -30,8 +30,14 @@ pub enum SlashCommand {
     Hooks,
     Testloop1,
     Testloop2,
+    Testloop3,
+    Testloop4,
+    Testloop5,
     Testloopstop1,
     Testloopstop2,
+    Testloopstop3,
+    Testloopstop4,
+    Testloopstop5,
     Review,
     Rename,
     New,
@@ -125,8 +131,14 @@ impl SlashCommand {
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Testloop1 => "run testloop1 until its condition is met",
             SlashCommand::Testloop2 => "run testloop2 until its condition is met",
+            SlashCommand::Testloop3 => "run testloop3 until its condition is met",
+            SlashCommand::Testloop4 => "run testloop4 until its condition is met",
+            SlashCommand::Testloop5 => "run testloop5 until its condition is met",
             SlashCommand::Testloopstop1 => "stop testloop1",
             SlashCommand::Testloopstop2 => "stop testloop2",
+            SlashCommand::Testloopstop3 => "stop testloop3",
+            SlashCommand::Testloopstop4 => "stop testloop4",
+            SlashCommand::Testloopstop5 => "stop testloop5",
             SlashCommand::Daemon => "Manage the local background server",
             SlashCommand::Rc => "manage remote control for the local background server",
             SlashCommand::Warnings => "view retained warnings and diagnostic details",
@@ -210,6 +222,9 @@ impl SlashCommand {
                 | SlashCommand::Rc
                 | SlashCommand::Testloop1
                 | SlashCommand::Testloop2
+                | SlashCommand::Testloop3
+                | SlashCommand::Testloop4
+                | SlashCommand::Testloop5
         )
     }
 
@@ -302,8 +317,14 @@ impl SlashCommand {
             | SlashCommand::Hooks
             | SlashCommand::Testloop1
             | SlashCommand::Testloop2
+            | SlashCommand::Testloop3
+            | SlashCommand::Testloop4
+            | SlashCommand::Testloop5
             | SlashCommand::Testloopstop1
             | SlashCommand::Testloopstop2
+            | SlashCommand::Testloopstop3
+            | SlashCommand::Testloopstop4
+            | SlashCommand::Testloopstop5
             | SlashCommand::Status
             | SlashCommand::Daemon
             | SlashCommand::Rc
@@ -405,8 +426,14 @@ mod tests {
         for (name, command) in [
             ("testloop1", SlashCommand::Testloop1),
             ("testloop2", SlashCommand::Testloop2),
+            ("testloop3", SlashCommand::Testloop3),
+            ("testloop4", SlashCommand::Testloop4),
+            ("testloop5", SlashCommand::Testloop5),
             ("testloopstop1", SlashCommand::Testloopstop1),
             ("testloopstop2", SlashCommand::Testloopstop2),
+            ("testloopstop3", SlashCommand::Testloopstop3),
+            ("testloopstop4", SlashCommand::Testloopstop4),
+            ("testloopstop5", SlashCommand::Testloopstop5),
         ] {
             assert_eq!(command.command(), name);
             assert_eq!(SlashCommand::from_str(name), Ok(command));
@@ -416,7 +443,13 @@ mod tests {
 
         assert!(SlashCommand::Testloop1.supports_inline_args());
         assert!(SlashCommand::Testloop2.supports_inline_args());
+        assert!(SlashCommand::Testloop3.supports_inline_args());
+        assert!(SlashCommand::Testloop4.supports_inline_args());
+        assert!(SlashCommand::Testloop5.supports_inline_args());
         assert!(!SlashCommand::Testloopstop1.supports_inline_args());
         assert!(!SlashCommand::Testloopstop2.supports_inline_args());
+        assert!(!SlashCommand::Testloopstop3.supports_inline_args());
+        assert!(!SlashCommand::Testloopstop4.supports_inline_args());
+        assert!(!SlashCommand::Testloopstop5.supports_inline_args());
     }
 }
