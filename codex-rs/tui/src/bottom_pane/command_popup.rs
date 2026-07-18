@@ -321,6 +321,29 @@ mod tests {
     }
 
     #[test]
+    fn testloop_commands_appear_immediately_for_slash_prefixes() {
+        for expected in [
+            "testloop3",
+            "testloop4",
+            "testloop5",
+            "testloopstop3",
+            "testloopstop4",
+            "testloopstop5",
+        ] {
+            let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
+            popup.on_composer_text_change(format!("/{expected}"));
+
+            assert!(
+                popup
+                    .filtered_items()
+                    .iter()
+                    .any(|item| item.command() == expected),
+                "expected '/{expected}' to appear in the slash-command picker"
+            );
+        }
+    }
+
+    #[test]
     fn model_is_first_suggestion_for_mo() {
         let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
         popup.on_composer_text_change("/mo".to_string());
