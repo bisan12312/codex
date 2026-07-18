@@ -766,19 +766,41 @@ async fn inline_slash_command_is_available_from_local_recall_after_dispatch() {
 }
 
 #[tokio::test]
-async fn testloop1_slash_command_submits_exact_hook_command_and_is_recallable() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let command = "/testloop1 fix the failing tests ;; all tests pass ;; production ready";
+async fn testloop_slash_commands_submit_exact_hook_commands_and_are_recallable() {
+    for (command, submitted) in [
+        (
+            "/testloop1 fix the failing tests ;; all tests pass ;; production ready",
+            "testloop1 fix the failing tests ;; all tests pass ;; production ready",
+        ),
+        (
+            "/testloop2 refactor the code ;; no lint errors",
+            "testloop2 refactor the code ;; no lint errors",
+        ),
+        (
+            "/testloop3 fix auth ;; auth tests pass ;; auth is production ready",
+            "testloop3 fix auth ;; auth tests pass ;; auth is production ready",
+        ),
+        (
+            "/testloop4 fix billing ;; billing tests pass ;; billing is production ready",
+            "testloop4 fix billing ;; billing tests pass ;; billing is production ready",
+        ),
+        (
+            "/testloop5 fix search ;; search tests pass ;; search is production ready",
+            "testloop5 fix search ;; search tests pass ;; search is production ready",
+        ),
+    ] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
-    submit_composer_text(&mut chat, command);
+        submit_composer_text(&mut chat, command);
 
-    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
-    assert_eq!(
-        chat.input_queue.queued_user_messages.front().unwrap().text,
-        "testloop1 fix the failing tests ;; all tests pass ;; production ready"
-    );
-    let _ = drain_insert_history(&mut rx);
-    assert_eq!(recall_latest_after_clearing(&mut chat), command);
+        assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+        assert_eq!(
+            chat.input_queue.queued_user_messages.front().unwrap().text,
+            submitted
+        );
+        let _ = drain_insert_history(&mut rx);
+        assert_eq!(recall_latest_after_clearing(&mut chat), command);
+    }
 }
 
 #[tokio::test]
@@ -804,6 +826,9 @@ async fn testloop_stop_slash_commands_submit_hook_commands() {
     for (command, submitted) in [
         (SlashCommand::Testloopstop1, "testloopstop1"),
         (SlashCommand::Testloopstop2, "testloopstop2"),
+        (SlashCommand::Testloopstop3, "testloopstop3"),
+        (SlashCommand::Testloopstop4, "testloopstop4"),
+        (SlashCommand::Testloopstop5, "testloopstop5"),
     ] {
         let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

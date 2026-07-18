@@ -41,6 +41,20 @@ const RAW_USAGE: &str = "Usage: /raw [on|off]";
 const USAGE_CHATGPT_LOGIN_REQUIRED: &str = "Sign in with ChatGPT to use /usage.";
 const TESTLOOP1_USAGE: &str = "Usage: /testloop1 <prompt> ;; <condition> [ ;; <goal> ]";
 const TESTLOOP2_USAGE: &str = "Usage: /testloop2 <prompt> ;; <condition>";
+const TESTLOOP3_USAGE: &str = "Usage: /testloop3 <prompt> ;; <condition> [ ;; <goal> ]";
+const TESTLOOP4_USAGE: &str = "Usage: /testloop4 <prompt> ;; <condition> [ ;; <goal> ]";
+const TESTLOOP5_USAGE: &str = "Usage: /testloop5 <prompt> ;; <condition> [ ;; <goal> ]";
+
+fn testloop_usage(command: SlashCommand) -> &'static str {
+    match command {
+        SlashCommand::Testloop1 => TESTLOOP1_USAGE,
+        SlashCommand::Testloop2 => TESTLOOP2_USAGE,
+        SlashCommand::Testloop3 => TESTLOOP3_USAGE,
+        SlashCommand::Testloop4 => TESTLOOP4_USAGE,
+        SlashCommand::Testloop5 => TESTLOOP5_USAGE,
+        _ => unreachable!("testloop_usage called for non-testloop command"),
+    }
+}
 
 impl ChatWidget {
     /// Dispatch a bare slash command and record its staged local-history entry.
@@ -545,11 +559,29 @@ impl ChatWidget {
             SlashCommand::Testloop2 => {
                 self.add_info_message(TESTLOOP2_USAGE.to_string(), /*hint*/ None);
             }
+            SlashCommand::Testloop3 => {
+                self.add_info_message(TESTLOOP3_USAGE.to_string(), /*hint*/ None);
+            }
+            SlashCommand::Testloop4 => {
+                self.add_info_message(TESTLOOP4_USAGE.to_string(), /*hint*/ None);
+            }
+            SlashCommand::Testloop5 => {
+                self.add_info_message(TESTLOOP5_USAGE.to_string(), /*hint*/ None);
+            }
             SlashCommand::Testloopstop1 => {
                 self.submit_user_message("testloopstop1".into());
             }
             SlashCommand::Testloopstop2 => {
                 self.submit_user_message("testloopstop2".into());
+            }
+            SlashCommand::Testloopstop3 => {
+                self.submit_user_message("testloopstop3".into());
+            }
+            SlashCommand::Testloopstop4 => {
+                self.submit_user_message("testloopstop4".into());
+            }
+            SlashCommand::Testloopstop5 => {
+                self.submit_user_message("testloopstop5".into());
             }
             SlashCommand::Daemon => self.app_event_tx.send(AppEvent::OpenDaemonMenu),
             SlashCommand::Warnings => self.app_event_tx.send(AppEvent::OpenWarnings),
@@ -852,16 +884,17 @@ impl ChatWidget {
             SlashCommand::Pwd => {
                 self.add_error_message("Usage: /pwd".to_string());
             }
-            SlashCommand::Testloop1 | SlashCommand::Testloop2 if !trimmed.is_empty() => {
+            SlashCommand::Testloop1
+            | SlashCommand::Testloop2
+            | SlashCommand::Testloop3
+            | SlashCommand::Testloop4
+            | SlashCommand::Testloop5
+                if !trimmed.is_empty() =>
+            {
                 if trimmed.contains(";;") {
                     self.submit_user_message(format!("{} {trimmed}", cmd.command()).into());
                 } else {
-                    let usage = if cmd == SlashCommand::Testloop1 {
-                        TESTLOOP1_USAGE
-                    } else {
-                        TESTLOOP2_USAGE
-                    };
-                    self.add_error_message(usage.to_string());
+                    self.add_error_message(testloop_usage(cmd).to_string());
                 }
             }
             SlashCommand::Usage => {
@@ -1385,8 +1418,14 @@ impl ChatWidget {
             | SlashCommand::Hooks
             | SlashCommand::Testloop1
             | SlashCommand::Testloop2
+            | SlashCommand::Testloop3
+            | SlashCommand::Testloop4
+            | SlashCommand::Testloop5
             | SlashCommand::Testloopstop1
             | SlashCommand::Testloopstop2
+            | SlashCommand::Testloopstop3
+            | SlashCommand::Testloopstop4
+            | SlashCommand::Testloopstop5
             | SlashCommand::Title
             | SlashCommand::Statusline
             | SlashCommand::Config
