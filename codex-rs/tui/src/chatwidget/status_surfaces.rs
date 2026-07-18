@@ -869,7 +869,11 @@ impl ChatWidget {
             }
             Err(err) => {
                 tracing::error!(error = %err, "failed to fetch Will Codex Reset forecast");
-                self.status_line_reset_forecast = Some(ResetForecastState::Failed);
+                self.status_line_reset_forecast =
+                    Some(self.status_line_reset_forecast.as_ref().map_or(
+                        ResetForecastState::Failed,
+                        ResetForecastState::after_fetch_failure,
+                    ));
                 crate::reset_forecast::RESET_FORECAST_RETRY_INTERVAL
             }
         };
