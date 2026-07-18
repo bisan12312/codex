@@ -20,11 +20,13 @@ const FORECAST_API_URL: &str = "https://www.willcodexquotareset.com/api/forecast
 const FORECAST_HORIZON_HOURS: u8 = 48;
 const ANNOUNCED_FORECAST_HORIZON_HOURS: u8 = 24;
 const FORECAST_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const BROWSER_REFRESH_TIMEOUT: Duration = Duration::from_secs(60);
 const MIN_FORECAST_REFRESH_DELAY: Duration = Duration::from_secs(60);
 const MAX_SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(2 * 60 * 60);
 const MAX_STALE_FORECAST_AGE: Duration = MAX_SERVER_REFRESH_INTERVAL;
 const FORECAST_CACHE_DIRECTORY: &str = "cache";
 const FORECAST_CACHE_FILE: &str = "will-codex-reset-forecast.json";
+const FORECAST_BROWSER_REFRESH_SCRIPT: &str = "scripts/refresh-codex-reset-forecast";
 const USER_AGENT: &str = "codex-reset-forecast-statusline/1.0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,24 +124,45 @@ struct ForecastApiValue {
     reset_announced: bool,
 }
 
+#[derive(Debug)]
+enum LiveForecastError {
+    BrowserCheckpoint(String),
+    Other(String),
+}
+
 pub(crate) async fn fetch_reset_forecast() -> Result<ResetForecast, String> {
     let cache_path = forecast_cache_path()?;
-    let network_result = fetch_live_forecast_payload().await;
+    let network_result = match fetch_live_forecast_payload().await {
+        Ok(payload) => Ok(payload),
+        Err(LiveForecastError::BrowserCheckpoint(network_error)) => {
+            let browser_result = refresh_forecast_cache_in_browser().await;
+            let combined_error = match browser_result {
+                Ok(()) => network_error,
+                Err(browser_error) => {
+                    format!("{network_error}; browser refresh failed: {browser_error}")
+                }
+            };
+            Err(combined_error)
+        }
+        Err(LiveForecastError::Other(network_error)) => Err(network_error),
+    };
     resolve_forecast_result(network_result, &cache_path, Utc::now())
 }
 
-async fn fetch_live_forecast_payload() -> Result<ForecastApiResponse, String> {
+async fn fetch_live_forecast_payload() -> Result<ForecastApiResponse, LiveForecastError> {
     let client = reqwest::Client::builder()
         .timeout(FORECAST_REQUEST_TIMEOUT)
         .user_agent(USER_AGENT)
         .build()
-        .map_err(|err| format!("failed to build reset-forecast HTTP client: {err}"))?;
+        .map_err(|err| {
+            LiveForecastError::Other(format!("failed to build reset-forecast HTTP client: {err}"))
+        })?;
     let response = client
         .get(FORECAST_API_URL)
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
         .await
-        .map_err(|err| format!("reset-forecast request failed: {err}"))?;
+        .map_err(|err| LiveForecastError::Other(format!("reset-forecast request failed: {err}")))?;
     if response.status() == reqwest::StatusCode::FORBIDDEN
         && response
             .headers()
@@ -147,20 +170,60 @@ async fn fetch_live_forecast_payload() -> Result<ForecastApiResponse, String> {
             .and_then(|value| value.to_str().ok())
             == Some("challenge")
     {
-        return Err(
+        return Err(LiveForecastError::BrowserCheckpoint(
             "reset-forecast endpoint is blocked by a Vercel browser checkpoint (HTTP 403)"
                 .to_string(),
-        );
+        ));
     }
-    let response = response
-        .error_for_status()
-        .map_err(|err| format!("reset-forecast endpoint returned an error: {err}"))?;
+    let response = response.error_for_status().map_err(|err| {
+        LiveForecastError::Other(format!("reset-forecast endpoint returned an error: {err}"))
+    })?;
     let payload = response
         .json::<ForecastApiResponse>()
         .await
-        .map_err(|err| format!("reset-forecast endpoint returned invalid JSON: {err}"))?;
+        .map_err(|err| {
+            LiveForecastError::Other(format!(
+                "reset-forecast endpoint returned invalid JSON: {err}"
+            ))
+        })?;
 
     Ok(payload)
+}
+
+async fn refresh_forecast_cache_in_browser() -> Result<(), String> {
+    let codex_home = codex_utils_home_dir::find_codex_home().map_err(|err| {
+        format!("failed to locate Codex home for reset-forecast browser refresh: {err}")
+    })?;
+    let script_path = codex_home.join(FORECAST_BROWSER_REFRESH_SCRIPT);
+    let mut command = tokio::process::Command::new(&*script_path);
+    command.kill_on_drop(true);
+    let output = tokio::time::timeout(BROWSER_REFRESH_TIMEOUT, command.output())
+        .await
+        .map_err(|_| {
+            format!(
+                "reset-forecast browser refresh exceeded {BROWSER_REFRESH_TIMEOUT:?}: {}",
+                script_path.display()
+            )
+        })?
+        .map_err(|err| {
+            format!(
+                "failed to run reset-forecast browser refresh {}: {err}",
+                script_path.display()
+            )
+        })?;
+    if !output.status.success() {
+        return Err(format!(
+            "reset-forecast browser refresh {} exited with {}; stderr: {}",
+            script_path.display(),
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    tracing::debug!(
+        output = %String::from_utf8_lossy(&output.stdout).trim(),
+        "reset-forecast browser refresh completed"
+    );
+    Ok(())
 }
 
 fn forecast_cache_path() -> Result<PathBuf, String> {
@@ -185,12 +248,20 @@ fn resolve_forecast_result(
         }
         Err(network_error) => match load_cached_forecast(cache_path, now) {
             Ok(forecast) => {
-                tracing::warn!(
-                    error = %network_error,
-                    cache = %cache_path.display(),
-                    "using explicitly stale Will Codex Reset forecast"
-                );
-                Ok(forecast.into_stale())
+                if forecast.stale {
+                    tracing::warn!(
+                        error = %network_error,
+                        cache = %cache_path.display(),
+                        "using explicitly stale Will Codex Reset forecast"
+                    );
+                } else {
+                    tracing::debug!(
+                        error = %network_error,
+                        cache = %cache_path.display(),
+                        "using current browser-refreshed Will Codex Reset forecast"
+                    );
+                }
+                Ok(forecast)
             }
             Err(cache_error) => Err(format!(
                 "{network_error}; cached reset forecast unavailable: {cache_error}"
@@ -222,7 +293,12 @@ fn load_cached_forecast(cache_path: &Path, now: DateTime<Utc>) -> Result<ResetFo
         ));
     }
 
-    validate_forecast(&payload, now)
+    let forecast = validate_forecast(&payload, now)?;
+    if payload.next_refresh_at <= now {
+        Ok(forecast.into_stale())
+    } else {
+        Ok(forecast)
+    }
 }
 
 fn persist_forecast_cache(cache_path: &Path, payload: &ForecastApiResponse) -> Result<(), String> {
@@ -368,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_checkpoint_uses_recent_persisted_forecast_and_marks_it_stale() {
+    fn browser_checkpoint_uses_current_browser_refreshed_forecast_as_fresh() {
         let temp = tempdir().expect("temp cache directory");
         let cache_path = temp.path().join("reset-forecast.json");
         let cached_payload = payload(
@@ -387,8 +463,8 @@ mod tests {
         )
         .expect("recent cache should remain visible");
 
-        assert_eq!(forecast.status_line_text(), "reset? 3% ≤48h STALE");
-        assert_eq!(forecast.refresh_after(), RESET_FORECAST_RETRY_INTERVAL);
+        assert_eq!(forecast.status_line_text(), "reset? 3% ≤48h");
+        assert_eq!(forecast.refresh_after(), Duration::from_secs(25 * 60));
     }
 
     #[test]
@@ -412,6 +488,30 @@ mod tests {
         .expect_err("expired cache must not be shown as current");
 
         assert!(error.contains("cached reset forecast is older than"));
+    }
+
+    #[test]
+    fn recent_cache_past_next_refresh_is_explicitly_stale_and_retries_hourly() {
+        let temp = tempdir().expect("temp cache directory");
+        let cache_path = temp.path().join("reset-forecast.json");
+        let cached_payload = payload(
+            r#"{
+                "fetchedAt": "2026-07-18T08:32:11.055Z",
+                "nextRefreshAt": "2026-07-18T09:02:11.055Z",
+                "forecast": {"score": 3, "resetAnnounced": false}
+            }"#,
+        );
+        persist_forecast_cache(&cache_path, &cached_payload).expect("persist cache fixture");
+
+        let forecast = resolve_forecast_result(
+            Err("forecast request failed".to_string()),
+            &cache_path,
+            time("2026-07-18T09:32:11.055Z"),
+        )
+        .expect("recent expired cache should remain visible as stale");
+
+        assert_eq!(forecast.status_line_text(), "reset? 3% ≤48h STALE");
+        assert_eq!(forecast.refresh_after(), RESET_FORECAST_RETRY_INTERVAL);
     }
 
     #[test]
