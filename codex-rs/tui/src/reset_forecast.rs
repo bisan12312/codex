@@ -4,11 +4,15 @@
 //! fixed horizon, not a personal quota balance or an exact reset ETA. Only the numeric score,
 //! announcement flag, and server refresh timestamps are accepted from the third-party response.
 
+use std::io::Write;
+use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use chrono::DateTime;
 use chrono::Utc;
 use serde::Deserialize;
+use serde::Serialize;
 
 pub(crate) const RESET_FORECAST_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
@@ -18,6 +22,9 @@ const ANNOUNCED_FORECAST_HORIZON_HOURS: u8 = 24;
 const FORECAST_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const MIN_FORECAST_REFRESH_DELAY: Duration = Duration::from_secs(60);
 const MAX_SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(2 * 60 * 60);
+const MAX_STALE_FORECAST_AGE: Duration = MAX_SERVER_REFRESH_INTERVAL;
+const FORECAST_CACHE_DIRECTORY: &str = "cache";
+const FORECAST_CACHE_FILE: &str = "will-codex-reset-forecast.json";
 const USER_AGENT: &str = "codex-reset-forecast-statusline/1.0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +32,7 @@ pub(crate) struct ResetForecast {
     score: u8,
     reset_announced: bool,
     refresh_after: Duration,
+    stale: bool,
 }
 
 impl ResetForecast {
@@ -41,6 +49,7 @@ impl ResetForecast {
             score: score as u8,
             reset_announced,
             refresh_after,
+            stale: false,
         })
     }
 
@@ -55,11 +64,22 @@ impl ResetForecast {
         } else {
             FORECAST_HORIZON_HOURS
         };
-        format!("{marker} {}% ≤{horizon_hours}h", self.score)
+        let text = format!("{marker} {}% ≤{horizon_hours}h", self.score);
+        if self.stale {
+            format!("{text} STALE")
+        } else {
+            text
+        }
     }
 
     pub(crate) fn refresh_after(&self) -> Duration {
         self.refresh_after
+    }
+
+    fn into_stale(mut self) -> Self {
+        self.stale = true;
+        self.refresh_after = RESET_FORECAST_RETRY_INTERVAL;
+        self
     }
 }
 
@@ -75,12 +95,19 @@ impl ResetForecastState {
         match self {
             Self::Loading => "reset? loading".to_string(),
             Self::Available(forecast) => forecast.status_line_text(),
-            Self::Failed => "reset? ERROR".to_string(),
+            Self::Failed => "reset? UNAVAILABLE".to_string(),
+        }
+    }
+
+    pub(crate) fn after_fetch_failure(&self) -> Self {
+        match self {
+            Self::Available(forecast) => Self::Available(forecast.clone().into_stale()),
+            Self::Loading | Self::Failed => Self::Failed,
         }
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ForecastApiResponse {
     fetched_at: DateTime<Utc>,
@@ -88,7 +115,7 @@ struct ForecastApiResponse {
     forecast: ForecastApiValue,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ForecastApiValue {
     score: u16,
@@ -96,6 +123,12 @@ struct ForecastApiValue {
 }
 
 pub(crate) async fn fetch_reset_forecast() -> Result<ResetForecast, String> {
+    let cache_path = forecast_cache_path()?;
+    let network_result = fetch_live_forecast_payload().await;
+    resolve_forecast_result(network_result, &cache_path, Utc::now())
+}
+
+async fn fetch_live_forecast_payload() -> Result<ForecastApiResponse, String> {
     let client = reqwest::Client::builder()
         .timeout(FORECAST_REQUEST_TIMEOUT)
         .user_agent(USER_AGENT)
@@ -107,6 +140,18 @@ pub(crate) async fn fetch_reset_forecast() -> Result<ResetForecast, String> {
         .send()
         .await
         .map_err(|err| format!("reset-forecast request failed: {err}"))?;
+    if response.status() == reqwest::StatusCode::FORBIDDEN
+        && response
+            .headers()
+            .get("x-vercel-mitigated")
+            .and_then(|value| value.to_str().ok())
+            == Some("challenge")
+    {
+        return Err(
+            "reset-forecast endpoint is blocked by a Vercel browser checkpoint (HTTP 403)"
+                .to_string(),
+        );
+    }
     let response = response
         .error_for_status()
         .map_err(|err| format!("reset-forecast endpoint returned an error: {err}"))?;
@@ -115,11 +160,110 @@ pub(crate) async fn fetch_reset_forecast() -> Result<ResetForecast, String> {
         .await
         .map_err(|err| format!("reset-forecast endpoint returned invalid JSON: {err}"))?;
 
-    validate_forecast(payload, Utc::now())
+    Ok(payload)
+}
+
+fn forecast_cache_path() -> Result<PathBuf, String> {
+    let codex_home = codex_utils_home_dir::find_codex_home()
+        .map_err(|err| format!("failed to locate Codex home for reset-forecast cache: {err}"))?;
+    Ok(codex_home
+        .join(FORECAST_CACHE_DIRECTORY)
+        .join(FORECAST_CACHE_FILE)
+        .to_path_buf())
+}
+
+fn resolve_forecast_result(
+    network_result: Result<ForecastApiResponse, String>,
+    cache_path: &Path,
+    now: DateTime<Utc>,
+) -> Result<ResetForecast, String> {
+    match network_result {
+        Ok(payload) => {
+            let forecast = validate_forecast(&payload, now)?;
+            persist_forecast_cache(cache_path, &payload)?;
+            Ok(forecast)
+        }
+        Err(network_error) => match load_cached_forecast(cache_path, now) {
+            Ok(forecast) => {
+                tracing::warn!(
+                    error = %network_error,
+                    cache = %cache_path.display(),
+                    "using explicitly stale Will Codex Reset forecast"
+                );
+                Ok(forecast.into_stale())
+            }
+            Err(cache_error) => Err(format!(
+                "{network_error}; cached reset forecast unavailable: {cache_error}"
+            )),
+        },
+    }
+}
+
+fn load_cached_forecast(cache_path: &Path, now: DateTime<Utc>) -> Result<ResetForecast, String> {
+    let serialized = std::fs::read(cache_path).map_err(|err| {
+        format!(
+            "failed to read reset-forecast cache {}: {err}",
+            cache_path.display()
+        )
+    })?;
+    let payload = serde_json::from_slice::<ForecastApiResponse>(&serialized).map_err(|err| {
+        format!(
+            "reset-forecast cache {} contains invalid JSON: {err}",
+            cache_path.display()
+        )
+    })?;
+    let cache_age = now
+        .signed_duration_since(payload.fetched_at)
+        .to_std()
+        .map_err(|_| "cached reset forecast was fetched in the future".to_string())?;
+    if cache_age > MAX_STALE_FORECAST_AGE {
+        return Err(format!(
+            "cached reset forecast is older than {MAX_STALE_FORECAST_AGE:?}: {cache_age:?}"
+        ));
+    }
+
+    validate_forecast(&payload, now)
+}
+
+fn persist_forecast_cache(cache_path: &Path, payload: &ForecastApiResponse) -> Result<(), String> {
+    let parent = cache_path.parent().ok_or_else(|| {
+        format!(
+            "reset-forecast cache path has no parent: {}",
+            cache_path.display()
+        )
+    })?;
+    std::fs::create_dir_all(parent).map_err(|err| {
+        format!(
+            "failed to create reset-forecast cache directory {}: {err}",
+            parent.display()
+        )
+    })?;
+    let serialized = serde_json::to_vec(payload)
+        .map_err(|err| format!("failed to serialize reset-forecast cache: {err}"))?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|err| {
+        format!(
+            "failed to create temporary reset-forecast cache in {}: {err}",
+            parent.display()
+        )
+    })?;
+    temporary
+        .write_all(&serialized)
+        .map_err(|err| format!("failed to write temporary reset-forecast cache: {err}"))?;
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|err| format!("failed to sync temporary reset-forecast cache: {err}"))?;
+    temporary.persist(cache_path).map_err(|err| {
+        format!(
+            "failed to atomically replace reset-forecast cache {}: {err}",
+            cache_path.display()
+        )
+    })?;
+    Ok(())
 }
 
 fn validate_forecast(
-    payload: ForecastApiResponse,
+    payload: &ForecastApiResponse,
     now: DateTime<Utc>,
 ) -> Result<ResetForecast, String> {
     let server_refresh_interval = payload
@@ -151,14 +295,22 @@ fn validate_forecast(
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use tempfile::tempdir;
+
+    fn payload(json: &str) -> ForecastApiResponse {
+        serde_json::from_str::<ForecastApiResponse>(json)
+            .expect("forecast fixture should deserialize")
+    }
+
+    fn time(value: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(value)
+            .expect("test time should parse")
+            .with_timezone(&Utc)
+    }
 
     fn parse(json: &str, now: &str) -> Result<ResetForecast, String> {
-        let payload = serde_json::from_str::<ForecastApiResponse>(json)
-            .expect("forecast fixture should deserialize");
-        let now = DateTime::parse_from_rfc3339(now)
-            .expect("test time should parse")
-            .with_timezone(&Utc);
-        validate_forecast(payload, now)
+        let payload = payload(json);
+        validate_forecast(&payload, time(now))
     }
 
     #[test]
@@ -179,6 +331,7 @@ mod tests {
                 score: 51,
                 reset_announced: false,
                 refresh_after: Duration::from_secs(27 * 60),
+                stale: false,
             }
         );
         assert_eq!(forecast.status_line_text(), "reset? 51% ≤48h");
@@ -212,5 +365,80 @@ mod tests {
         .expect_err("out-of-range score should fail");
 
         assert_eq!(error, "reset-forecast score is outside 0..=100: 101");
+    }
+
+    #[test]
+    fn browser_checkpoint_uses_recent_persisted_forecast_and_marks_it_stale() {
+        let temp = tempdir().expect("temp cache directory");
+        let cache_path = temp.path().join("reset-forecast.json");
+        let cached_payload = payload(
+            r#"{
+                "fetchedAt": "2026-07-18T08:32:11.055Z",
+                "nextRefreshAt": "2026-07-18T09:02:11.055Z",
+                "forecast": {"score": 3, "resetAnnounced": false}
+            }"#,
+        );
+        persist_forecast_cache(&cache_path, &cached_payload).expect("persist cache fixture");
+
+        let forecast = resolve_forecast_result(
+            Err("Vercel browser checkpoint (HTTP 403)".to_string()),
+            &cache_path,
+            time("2026-07-18T08:37:11.055Z"),
+        )
+        .expect("recent cache should remain visible");
+
+        assert_eq!(forecast.status_line_text(), "reset? 3% ≤48h STALE");
+        assert_eq!(forecast.refresh_after(), RESET_FORECAST_RETRY_INTERVAL);
+    }
+
+    #[test]
+    fn browser_checkpoint_rejects_expired_persisted_forecast() {
+        let temp = tempdir().expect("temp cache directory");
+        let cache_path = temp.path().join("reset-forecast.json");
+        let cached_payload = payload(
+            r#"{
+                "fetchedAt": "2026-07-18T05:32:11.055Z",
+                "nextRefreshAt": "2026-07-18T06:02:11.055Z",
+                "forecast": {"score": 95, "resetAnnounced": false}
+            }"#,
+        );
+        persist_forecast_cache(&cache_path, &cached_payload).expect("persist cache fixture");
+
+        let error = resolve_forecast_result(
+            Err("Vercel browser checkpoint (HTTP 403)".to_string()),
+            &cache_path,
+            time("2026-07-18T08:37:11.055Z"),
+        )
+        .expect_err("expired cache must not be shown as current");
+
+        assert!(error.contains("cached reset forecast is older than"));
+    }
+
+    #[test]
+    fn successful_live_request_persists_forecast_for_a_new_terminal() {
+        let temp = tempdir().expect("temp cache directory");
+        let cache_path = temp.path().join("reset-forecast.json");
+        let live_payload = payload(
+            r#"{
+                "fetchedAt": "2026-07-18T08:32:11.055Z",
+                "nextRefreshAt": "2026-07-18T09:02:11.055Z",
+                "forecast": {"score": 3, "resetAnnounced": false}
+            }"#,
+        );
+
+        let forecast = resolve_forecast_result(
+            Ok(live_payload),
+            &cache_path,
+            time("2026-07-18T08:37:11.055Z"),
+        )
+        .expect("live forecast should validate and persist");
+
+        assert_eq!(forecast.status_line_text(), "reset? 3% ≤48h");
+        let persisted = std::fs::read_to_string(&cache_path).expect("persisted forecast cache");
+        assert_eq!(
+            payload(&persisted).forecast.score,
+            3,
+            "new terminals should be able to read the last validated score"
+        );
     }
 }

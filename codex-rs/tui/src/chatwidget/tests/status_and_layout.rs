@@ -3656,7 +3656,7 @@ async fn status_line_countdown_refresh_requests_fresh_account_limits() {
 }
 
 #[tokio::test]
-async fn status_line_reset_forecast_refreshes_and_fails_loudly() {
+async fn status_line_reset_forecast_refreshes_and_marks_last_good_value_stale() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     while rx.try_recv().is_ok() {}
     chat.config.tui_status_line = Some(vec!["reset-forecast".to_string()]);
@@ -3687,7 +3687,10 @@ async fn status_line_reset_forecast_refreshes_and_fails_loudly() {
         retry_request_id,
         Err("forecast endpoint unavailable".to_string())
     ));
-    assert_eq!(status_line_text(&chat), Some("reset? ERROR".to_string()));
+    assert_eq!(
+        status_line_text(&chat),
+        Some("reset? 51% ≤48h STALE".to_string())
+    );
     let retry_after = chat
         .status_line_reset_forecast_refresh_at
         .expect("error should schedule a retry")
