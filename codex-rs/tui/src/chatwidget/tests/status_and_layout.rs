@@ -4058,11 +4058,11 @@ async fn status_line_fast_mode_renders_on_and_off() {
     chat.config.tui_status_line = Some(vec!["fast-mode".to_string()]);
 
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
 
     chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast on".to_string()));
+    assert_eq!(status_line_text(&chat), Some("on".to_string()));
 }
 
 #[tokio::test]

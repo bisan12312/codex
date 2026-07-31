@@ -979,9 +979,9 @@ impl ChatWidget {
                 .is_none_or(|preset| preset.supports_fast_mode())
                 .then(|| {
                     if self.current_service_tier() == Some(ServiceTier::Fast.request_value()) {
-                        "Fast on".to_string()
+                        "on".to_string()
                     } else {
-                        "Fast off".to_string()
+                        "off".to_string()
                     }
                 }),
             StatusLineItem::RawOutput => self.raw_output_mode().then(|| "raw output".to_string()),
