@@ -4507,16 +4507,16 @@ async fn status_line_processing_tier_updates_with_selection() {
     chat.local_settings.tui.terminal_title = Some(vec!["fast-mode".to_string()]);
 
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Standard".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
 
     chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
-    assert_eq!(status_line_text(&chat), Some("fast".to_string()));
-    insta::assert_snapshot!(chat.last_terminal_title.as_deref().unwrap(), @"fast");
+    assert_eq!(status_line_text(&chat), Some("on".to_string()));
+    insta::assert_snapshot!(chat.last_terminal_title.as_deref().unwrap(), @"on");
 
     chat.set_feature_enabled(Feature::FastMode, /*enabled*/ false);
     assert_eq!(
         (status_line_text(&chat), chat.last_terminal_title.clone()),
-        (Some("Standard".to_string()), Some("Standard".to_string()))
+        (Some("off".to_string()), Some("off".to_string()))
     );
     chat.set_feature_enabled(Feature::FastMode, /*enabled*/ true);
 
@@ -4529,7 +4529,7 @@ async fn status_line_processing_tier_updates_with_selection() {
     ] {
         chat.config.model_provider_id = provider_id.into();
         chat.refresh_status_line();
-        assert_eq!(status_line_text(&chat), Some("Standard".to_string()));
+        assert_eq!(status_line_text(&chat), Some("off".to_string()));
     }
 }
 
