@@ -1044,10 +1044,17 @@ impl ChatWidget {
                 .status_line_thread_cost_micros()
                 .and_then(format_estimated_usd_micros),
             StatusLineItem::SessionId => self.thread_id.map(|id| id.to_string()),
+            // Compact, as Claude's status line: "on" for the fast tier, "off"
+            // for the standard one, and any other tier (Flex) by its name.
             StatusLineItem::FastMode => Some(
-                self.processing_tier_display_name()
-                    .unwrap_or("Standard")
-                    .to_string(),
+                if self.current_service_tier() == Some(ServiceTier::Fast.request_value())
+                    && self.processing_tier_display_name().is_some()
+                {
+                    "on".to_string()
+                } else {
+                    self.processing_tier_display_name()
+                        .map_or_else(|| "off".to_string(), str::to_string)
+                },
             ),
             StatusLineItem::Daybreak => Some(
                 if self.daybreak_enabled && !self.side_conversation_active() {
