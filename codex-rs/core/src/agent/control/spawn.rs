@@ -5,6 +5,7 @@ use super::spawn_telemetry::SpawnMeasurements;
 use super::spawn_telemetry::record_spawn_success;
 use super::*;
 use crate::agent::child_config::build_agent_resume_config;
+use crate::agent::exceeds_thread_spawn_depth_limit;
 use crate::agent::helper_daybreak;
 use crate::agent::history::load_agent_model_context;
 use crate::agent::history::prepare_forked_history;
@@ -321,6 +322,13 @@ impl LocalAgentControl {
         let (session_source, _) = initial_history
             .get_resumed_session_sources()
             .unwrap_or((stored_source, None));
+        if let SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) = &session_source
+            && exceeds_thread_spawn_depth_limit(*depth, config.agent_max_depth)
+        {
+            return Err(CodexErr::InvalidRequest(
+                "Agent depth limit reached. Solve the task yourself.".to_string(),
+            ));
+        }
         if let Some(parent_thread_id) = owner_thread_id {
             if session_source.parent_thread_id() != Some(parent_thread_id)
                 || initial_history
@@ -355,6 +363,7 @@ impl LocalAgentControl {
         };
         config.model_reasoning_effort = stored_reasoning_effort;
         if let Some(role_name) = session_source.get_agent_role() {
+            let runtime_resource_config = config.clone();
             let runtime_approval_policy = config.permissions.approval_policy.value();
             let runtime_approvals_reviewer = config.approvals_reviewer;
             let runtime_cwd = config.cwd.clone();
@@ -374,6 +383,29 @@ impl LocalAgentControl {
             apply_role_to_config(&mut config, Some(&role_name))
                 .await
                 .map_err(CodexErr::InvalidRequest)?;
+            config
+                .model_context_window
+                .clone_from(&runtime_resource_config.model_context_window);
+            config
+                .model_auto_compact_token_limit
+                .clone_from(&runtime_resource_config.model_auto_compact_token_limit);
+            config
+                .model_auto_compact_token_limit_scope
+                .clone_from(&runtime_resource_config.model_auto_compact_token_limit_scope);
+            config
+                .tool_output_token_limit
+                .clone_from(&runtime_resource_config.tool_output_token_limit);
+            config
+                .agent_max_threads
+                .clone_from(&runtime_resource_config.agent_max_threads);
+            config.agent_max_depth = runtime_resource_config.agent_max_depth;
+            config.multi_agent_v2.max_concurrent_threads_per_session = runtime_resource_config
+                .multi_agent_v2
+                .max_concurrent_threads_per_session;
+            config.history.clone_from(&runtime_resource_config.history);
+            config
+                .mcp_servers
+                .clone_from(&runtime_resource_config.mcp_servers);
             config
                 .permissions
                 .approval_policy

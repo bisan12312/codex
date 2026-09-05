@@ -278,6 +278,15 @@ impl AgentControlHarness {
         Self::new_with_config(home, config).await
     }
 
+    /// Multi-level agent trees need a deeper ceiling than the protected
+    /// default of one level; production keeps `agents.max_depth = 1` through
+    /// the Local Terminal launcher configuration.
+    async fn new_with_max_depth(max_depth: i32) -> Self {
+        let (home, mut config) = test_config().await;
+        config.agent_max_depth = max_depth;
+        Self::new_with_config(home, config).await
+    }
+
     async fn new_with_config(home: TempDir, config: Config) -> Self {
         let state_db = init_state_db(&config).await;
         let manager = ThreadManager::with_models_provider_home_and_state_for_tests(
@@ -1301,6 +1310,8 @@ async fn spawn_v2_reload_test_child(
 
 async fn check_v2_agent_reload(route: V2ReloadRoute) {
     let (home, mut config) = test_config().await;
+    // The nested-parent route spawns a grandchild.
+    config.agent_max_depth = 2;
     let _ = config.features.enable(Feature::MultiAgentV2);
     let _ = config.features.enable(Feature::Sqlite);
     config.model = Some("gpt-5.6-sol".to_string());
@@ -1566,6 +1577,7 @@ async fn check_v2_agent_reload(route: V2ReloadRoute) {
 #[tokio::test]
 async fn resume_agent_from_rollout_does_not_reopen_v2_descendants() {
     let (home, mut config) = test_config().await;
+    config.agent_max_depth = 2;
     let _ = config.features.enable(Feature::MultiAgentV2);
     let _ = config.features.enable(Feature::Sqlite);
     let harness = AgentControlHarness::new_with_config(home, config).await;
@@ -4324,6 +4336,46 @@ async fn spawn_agent_respects_legacy_max_threads_alias() {
 }
 
 #[tokio::test]
+async fn spawn_agent_control_rejects_depth_beyond_configured_limit() {
+    let (_home, mut config) = test_config().await;
+    config.agent_max_depth = 1;
+    let manager = ThreadManager::with_models_provider_and_home_for_tests(
+        CodexAuth::from_api_key("dummy"),
+        config.model_provider.clone(),
+        config.codex_home.to_path_buf(),
+        std::sync::Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+    );
+    let control = manager.agent_control();
+    let root = manager
+        .start_thread(StartThreadOptions::new(config.clone()))
+        .await
+        .expect("start root thread");
+
+    let err = control
+        .spawn_agent(
+            config,
+            text_input("nested child"),
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id: root.thread_id,
+                depth: 2,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            })),
+        )
+        .await
+        .expect_err("AgentControl should enforce max depth for every spawn path");
+    let CodexErrorDetails::InvalidRequest(message) = err.details() else {
+        panic!("expected InvalidRequest depth error");
+    };
+    assert_eq!(
+        message,
+        "Agent depth limit reached. Solve the task yourself."
+    );
+    assert_eq!(manager.list_thread_ids().await, vec![root.thread_id]);
+}
+
+#[tokio::test]
 async fn spawn_agent_releases_slot_after_shutdown() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
@@ -4536,6 +4588,7 @@ async fn spawn_child_completion_notifies_parent_history() {
 async fn multi_agent_v2_completion_ignores_dead_direct_parent() {
     let harness = AgentControlHarness::new().await;
     let mut config = harness.config.clone();
+    config.agent_max_depth = 2;
     let _ = config.features.enable(Feature::MultiAgentV2);
     let root = harness
         .manager
@@ -5328,7 +5381,7 @@ async fn resume_agent_from_paginated_rollout_loads_model_context(disabled_plugin
 
 #[tokio::test]
 async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants() {
-    let harness = AgentControlHarness::new().await;
+    let harness = AgentControlHarness::new_with_max_depth(3).await;
     let (parent_thread_id, _parent_thread) = harness.start_thread().await;
     let worker_path = AgentPath::root().join("worker").expect("worker path");
     let reviewer_path = AgentPath::root().join("reviewer").expect("reviewer path");
@@ -5454,7 +5507,8 @@ async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants
 
 #[tokio::test]
 async fn list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root() {
-    let (_home, config) = test_config().await;
+    let (_home, mut config) = test_config().await;
+    config.agent_max_depth = 2;
     let manager = ThreadManager::with_models_provider_home_and_state_for_tests(
         CodexAuth::from_api_key("dummy"),
         config.model_provider.clone(),
@@ -5514,7 +5568,7 @@ async fn list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root()
 
 #[tokio::test]
 async fn shutdown_agent_tree_closes_live_descendants() {
-    let harness = AgentControlHarness::new().await;
+    let harness = AgentControlHarness::new_with_max_depth(2).await;
     let (parent_thread_id, _parent_thread) = harness.start_thread().await;
 
     let child_thread_id = harness
@@ -5599,7 +5653,7 @@ async fn shutdown_agent_tree_closes_live_descendants() {
 
 #[tokio::test]
 async fn shutdown_agent_tree_closes_descendants_when_started_at_child() {
-    let harness = AgentControlHarness::new().await;
+    let harness = AgentControlHarness::new_with_max_depth(2).await;
     let (parent_thread_id, _parent_thread) = harness.start_thread().await;
 
     let child_thread_id = harness
@@ -5690,7 +5744,7 @@ async fn shutdown_agent_tree_closes_descendants_when_started_at_child() {
 
 #[tokio::test]
 async fn resume_agent_from_rollout_does_not_reopen_closed_descendants() {
-    let harness = AgentControlHarness::new().await;
+    let harness = AgentControlHarness::new_with_max_depth(2).await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
     let child_thread_id = harness
@@ -5785,7 +5839,7 @@ async fn resume_agent_from_rollout_does_not_reopen_closed_descendants() {
 
 #[tokio::test]
 async fn resume_closed_child_reopens_open_descendants() {
-    let harness = AgentControlHarness::new().await;
+    let harness = AgentControlHarness::new_with_max_depth(2).await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
     let child_thread_id = harness
@@ -5882,7 +5936,7 @@ async fn resume_closed_child_reopens_open_descendants() {
 
 #[tokio::test]
 async fn resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdown() {
-    let harness = AgentControlHarness::new().await;
+    let harness = AgentControlHarness::new_with_max_depth(2).await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
     let child_thread_id = harness
@@ -5973,7 +6027,7 @@ async fn resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdo
 
 #[tokio::test]
 async fn resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_source_is_stale() {
-    let harness = AgentControlHarness::new().await;
+    let harness = AgentControlHarness::new_with_max_depth(2).await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
     let child_thread_id = harness
@@ -6104,7 +6158,7 @@ async fn resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_sourc
 
 #[tokio::test]
 async fn resume_agent_from_rollout_skips_descendants_when_parent_resume_fails() {
-    let harness = AgentControlHarness::new().await;
+    let harness = AgentControlHarness::new_with_max_depth(2).await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
     let child_thread_id = harness
