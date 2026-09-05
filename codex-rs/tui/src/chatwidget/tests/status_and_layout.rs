@@ -4543,18 +4543,18 @@ async fn status_line_fast_mode_updates_on_model_change() {
     chat.local_settings.tui.status_line = Some(vec!["fast-mode".to_string()]);
 
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Standard".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
 
     chat.set_model("gpt-5.2");
-    assert_eq!(status_line_text(&chat), Some("Standard".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
 
     chat.set_model("gpt-5.4");
-    assert_eq!(status_line_text(&chat), Some("Standard".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
 
     chat.set_model("uncatalogued-model");
-    assert_eq!(status_line_text(&chat), Some("Standard".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
     chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
-    assert_eq!(status_line_text(&chat), Some("Standard".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
 }
 
 #[tokio::test]
