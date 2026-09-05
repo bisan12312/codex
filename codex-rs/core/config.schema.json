@@ -63,7 +63,7 @@
           "type": "integer"
         },
         "max_depth": {
-          "description": "Maximum nesting depth for V1 agent threads. Ignored by V2.",
+          "description": "Maximum nesting depth for V1 and V2 agent threads.",
           "format": "int32",
           "type": "integer"
         }

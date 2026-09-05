@@ -1413,6 +1413,7 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
     let manager = thread_manager();
     let mut config = (*turn.config).clone();
     let _ = config.features.enable(Feature::MultiAgentV2);
+    config.agent_max_depth = 2;
     set_turn_config(&mut turn, config.clone());
     let root = manager
         .start_thread(StartThreadOptions::new((*turn.config).clone()))
@@ -2261,6 +2262,114 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
 }
 
 #[tokio::test]
+async fn multi_agent_v2_role_cannot_widen_parent_resource_or_fanout_limits() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    tokio::fs::create_dir_all(&turn.config.codex_home)
+        .await
+        .expect("codex home should be created");
+    let role_config_path = turn
+        .config
+        .codex_home
+        .as_path()
+        .join("resource-widening-role.toml");
+    tokio::fs::write(
+        &role_config_path,
+        r#"model_context_window = 999999
+model_auto_compact_token_limit = 888888
+tool_output_token_limit = 777777
+
+[history]
+max_bytes = 999999999
+
+[agents]
+max_concurrent_threads_per_session = 99
+max_depth = 99
+
+[mcp_servers.role_bypass]
+command = "/usr/bin/true"
+"#,
+    )
+    .await
+    .expect("role config should be written");
+
+    let role_name = "resource-widening-role".to_string();
+    let mut config = (*turn.config).clone();
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    config.model_context_window = Some(65_536);
+    config.model_auto_compact_token_limit = Some(49_152);
+    config.tool_output_token_limit = Some(4_096);
+    config.history.max_bytes = Some(10_485_760);
+    config.agent_max_threads = Some(4);
+    config.agent_max_depth = 1;
+    config.multi_agent_v2.max_concurrent_threads_per_session = 5;
+    config.agent_roles.insert(
+        role_name.clone(),
+        AgentRoleConfig {
+            description: Some("Role that attempts to widen runtime limits".to_string()),
+            config_file: Some(role_config_path),
+            nickname_candidates: None,
+        },
+    );
+    let expected_mcp_servers = config.mcp_servers.clone();
+    let manager = thread_manager();
+    let root = manager
+        .start_thread(StartThreadOptions::new(config.clone()))
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.thread_id = root.thread_id;
+    set_turn_config(&mut turn, config);
+
+    SpawnAgentHandlerV2::default()
+        .handle(invocation(
+            Arc::new(session),
+            Arc::new(turn),
+            "spawn_agent",
+            function_payload(json!({
+                "message": "inspect this repo",
+                "task_name": "limited_child",
+                "agent_type": role_name,
+                "fork_turns": "none"
+            })),
+        ))
+        .await
+        .expect("spawn_agent should succeed");
+    let mut child_ids = manager
+        .list_thread_ids()
+        .await
+        .into_iter()
+        .filter(|thread_id| *thread_id != root.thread_id)
+        .collect::<Vec<_>>();
+    assert_eq!(child_ids.len(), 1, "exactly one child should be spawned");
+    let child_id = child_ids.pop().expect("spawned child should exist");
+    let child_thread = manager
+        .get_thread(child_id)
+        .await
+        .expect("child thread should exist");
+    let child_turn = child_thread.session.new_default_turn().await;
+    assert_eq!(child_turn.config.model_context_window, Some(65_536));
+    assert_eq!(
+        child_turn.config.model_auto_compact_token_limit,
+        Some(49_152)
+    );
+    assert_eq!(child_turn.config.tool_output_token_limit, Some(4_096));
+    assert_eq!(child_turn.config.history.max_bytes, Some(10_485_760));
+    assert_eq!(child_turn.config.agent_max_threads, Some(4));
+    assert_eq!(child_turn.config.agent_max_depth, 1);
+    assert_eq!(
+        child_turn
+            .config
+            .multi_agent_v2
+            .max_concurrent_threads_per_session,
+        5
+    );
+    assert_eq!(child_turn.config.mcp_servers, expected_mcp_servers);
+}
+
+#[tokio::test]
 async fn spawn_agent_rejects_when_depth_limit_exceeded() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
@@ -2339,13 +2448,7 @@ async fn spawn_agent_allows_depth_up_to_configured_max_depth() {
 }
 
 #[tokio::test]
-async fn multi_agent_v2_spawn_agent_ignores_configured_max_depth() {
-    #[derive(Debug, Deserialize)]
-    struct SpawnAgentResult {
-        task_name: String,
-        nickname: Option<String>,
-    }
-
+async fn multi_agent_v2_spawn_agent_rejects_when_depth_limit_exceeded() {
     let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
     let mut config = (*turn.config).clone();
@@ -2380,16 +2483,51 @@ async fn multi_agent_v2_spawn_agent_ignores_configured_max_depth() {
             "fork_turns": "none"
         })),
     );
-    let output = SpawnAgentHandlerV2::default()
+    let Err(err) = SpawnAgentHandlerV2::default().handle(invocation).await else {
+        panic!("multi-agent v2 spawn should enforce max depth");
+    };
+    assert_eq!(
+        err,
+        FunctionCallError::RespondToModel(
+            "Agent depth limit reached. Solve the task yourself.".to_string()
+        )
+    );
+    assert_eq!(manager.list_thread_ids().await, vec![root.thread_id]);
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_agent_allows_configured_depth_boundary() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let manager = thread_manager();
+    let mut config = (*turn.config).clone();
+    config.agent_max_depth = 1;
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    let root = manager
+        .start_thread(StartThreadOptions::new(config.clone()))
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.thread_id = root.thread_id;
+    set_turn_config(&mut turn, config);
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "message": "hello",
+            "task_name": "child",
+            "fork_turns": "none"
+        })),
+    );
+    SpawnAgentHandlerV2::default()
         .handle(invocation)
         .await
-        .expect("multi-agent v2 spawn should ignore max depth");
-    let (content, success) = expect_text_output(output);
-    let result: SpawnAgentResult =
-        serde_json::from_str(&content).expect("spawn_agent result should be json");
-    assert_eq!(result.task_name, "/root/parent/child");
-    assert_eq!(result.nickname, None);
-    assert_eq!(success, Some(true));
+        .expect("multi-agent v2 spawn should allow depth equal to max depth");
+    assert_eq!(manager.list_thread_ids().await.len(), 2);
 }
 
 #[tokio::test]
@@ -3703,6 +3841,7 @@ async fn multi_agent_v2_interrupt_agent_accepts_task_name_target() {
         .features
         .enable(Feature::MultiAgentV2)
         .expect("test config should allow feature update");
+    config.agent_max_depth = 2;
     set_turn_config(&mut turn, config);
 
     let session = Arc::new(session);
