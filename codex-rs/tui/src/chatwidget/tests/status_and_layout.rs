@@ -94,7 +94,7 @@ async fn resumed_session_hides_unknown_token_usage_until_an_update_arrives() {
     chat.refresh_status_line();
     assert_eq!(
         status_line_text(&chat),
-        Some("Context 30% left · Context 70% used · 0 in · 0 out".to_string())
+        Some("Context 30% left | ctx 70% | 0 in | 0 out".to_string())
     );
 }
 
@@ -3061,7 +3061,7 @@ async fn status_line_thread_credits_and_cost_share_one_backend_request() {
     ));
     assert_eq!(
         status_line_text(&chat),
-        Some("5.2 credits · ~$0.21".to_string())
+        Some("5.2 credits | ~$0.21".to_string())
     );
     assert!(rx.try_recv().is_err(), "idle refresh must not poll");
 }
@@ -3617,6 +3617,7 @@ async fn claude_style_codex_status_line_uses_exact_order_and_wording() {
         individual_limit: None,
         plan_type: Some(PlanType::Pro),
         rate_limit_reached_type: None,
+        spend_control_reached: None,
     }));
     chat.refresh_status_line();
 
@@ -3645,6 +3646,7 @@ async fn status_line_countdown_refresh_requests_fresh_account_limits() {
         individual_limit: None,
         plan_type: Some(PlanType::Pro),
         rate_limit_reached_type: None,
+        spend_control_reached: None,
     }));
     while rx.try_recv().is_ok() {}
 
@@ -4072,18 +4074,18 @@ async fn status_line_fast_mode_updates_visibility_on_model_change() {
     chat.config.tui_status_line = Some(vec!["fast-mode".to_string()]);
 
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
 
     chat.set_model("gpt-5.2");
     assert_eq!(status_line_text(&chat), None);
 
     chat.set_model("gpt-5.4");
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
 
     chat.set_model("uncatalogued-model");
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
+    assert_eq!(status_line_text(&chat), Some("off".to_string()));
     chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
-    assert_eq!(status_line_text(&chat), Some("Fast on".to_string()));
+    assert_eq!(status_line_text(&chat), Some("on".to_string()));
 }
 
 #[tokio::test]

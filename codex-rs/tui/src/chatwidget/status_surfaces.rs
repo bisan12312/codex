@@ -853,13 +853,16 @@ impl ChatWidget {
                     Some(PlanType::Pro) => "ChatGPT Pro",
                     Some(PlanType::Team) => "ChatGPT Team",
                     Some(PlanType::Business) => "ChatGPT Business",
-                    Some(PlanType::Edu) => "ChatGPT Edu",
+                    Some(PlanType::Edu | PlanType::EduPlus | PlanType::EduPro) => "ChatGPT Edu",
                     Some(PlanType::Enterprise) => "ChatGPT Enterprise",
                     Some(
                         PlanType::Free
                         | PlanType::Go
                         | PlanType::ProLite
+                        | PlanType::SelfServeBusinessProLite
                         | PlanType::SelfServeBusinessUsageBased
+                        | PlanType::Ent26
+                        | PlanType::EnterpriseCbpAutomation
                         | PlanType::EnterpriseCbpUsageBased
                         | PlanType::Unknown,
                     )

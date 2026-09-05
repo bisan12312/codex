@@ -2775,7 +2775,7 @@ async fn pre_sampling_compact_falls_back_after_previous_model_usage_limit() {
     let test = builder.build(&server).await.expect("build test codex");
 
     test.codex
-        .submit(disabled_permission_user_turn(
+        .start_or_steer_turn(disabled_permission_user_turn(
             "before switch",
             test.cwd.path().to_path_buf(),
             previous_model.to_string(),
@@ -2788,7 +2788,7 @@ async fn pre_sampling_compact_falls_back_after_previous_model_usage_limit() {
     .await;
 
     test.codex
-        .submit(disabled_permission_user_turn(
+        .start_or_steer_turn(disabled_permission_user_turn(
             "after switch",
             test.cwd.path().to_path_buf(),
             next_model.to_string(),

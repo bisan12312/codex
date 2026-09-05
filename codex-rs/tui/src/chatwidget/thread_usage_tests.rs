@@ -659,7 +659,7 @@ async fn billing_surfaces_render_for_every_supported_enterprise_plan() {
 
         assert_eq!(
             chat.status_line_text(),
-            Some("5.2 credits · ~$0.21".to_string())
+            Some("5.2 credits | ~$0.21".to_string())
         );
         assert_eq!(
             chat.last_terminal_title,

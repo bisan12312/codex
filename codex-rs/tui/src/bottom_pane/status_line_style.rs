@@ -169,7 +169,10 @@ fn claude_usage_style(item: StatusLineItem, text: &str) -> Option<Style> {
         | StatusLineItem::RawOutput
         | StatusLineItem::ThreadTitle
         | StatusLineItem::WorkspaceHeadline
-        | StatusLineItem::TaskProgress => return None,
+        | StatusLineItem::TaskProgress
+        | StatusLineItem::Hostname
+        | StatusLineItem::ThreadCredits
+        | StatusLineItem::EstimatedThreadCost => return None,
     };
 
     Some(match used_percent {
@@ -303,9 +306,10 @@ mod tests {
         )
         .expect("thread usage status line");
 
-        assert_eq!(line_text(&line), "5.2 credits · ~$0.21");
+        assert_eq!(line_text(&line), "5.2 credits | ~$0.21");
         assert_eq!(line.spans[0].style, line.spans[2].style);
-        assert!(line.spans[1].style.add_modifier.contains(Modifier::DIM));
+        // Claude-style separators stay plain when theme colors are on.
+        assert!(!line.spans[1].style.add_modifier.contains(Modifier::DIM));
     }
 
     #[test]

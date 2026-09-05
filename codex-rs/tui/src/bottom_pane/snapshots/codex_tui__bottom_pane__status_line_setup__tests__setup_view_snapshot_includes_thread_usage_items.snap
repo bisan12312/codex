@@ -15,7 +15,7 @@ expression: "render_lines(&view, 100)"
   [ ] model                  Current model name                                                     
   [ ] model-with-reasoning   Current model name with reasoning level                                
   [ ] reasoning              Current reasoning level                                                
-  [ ] current-dir            Current working directory                                              
+  [ ] plan-type              Current ChatGPT subscription label                                     
                                                                                                     
-  5.2 credits · ~$1.82                                                                              
+  5.2 credits | ~$1.82                                                                              
   Press space to toggle; ←/→ to move; enter to confirm and close; esc to close
