@@ -234,6 +234,31 @@ pub(crate) fn apply_spawn_agent_runtime_overrides(
     config: &mut Config,
     turn: &TurnContext,
 ) -> Result<(), FunctionCallError> {
+    // Agent-role files are reloaded at session-flag precedence.  Resource and
+    // fan-out limits belong to the live parent session and must not be widened
+    // by a role layer selected for a child.
+    config
+        .model_context_window
+        .clone_from(&turn.config.model_context_window);
+    config
+        .model_auto_compact_token_limit
+        .clone_from(&turn.config.model_auto_compact_token_limit);
+    config
+        .model_auto_compact_token_limit_scope
+        .clone_from(&turn.config.model_auto_compact_token_limit_scope);
+    config
+        .tool_output_token_limit
+        .clone_from(&turn.config.tool_output_token_limit);
+    config
+        .agent_max_threads
+        .clone_from(&turn.config.agent_max_threads);
+    config.agent_max_depth = turn.config.agent_max_depth;
+    config.multi_agent_v2.max_concurrent_threads_per_session = turn
+        .config
+        .multi_agent_v2
+        .max_concurrent_threads_per_session;
+    config.history.clone_from(&turn.config.history);
+    config.mcp_servers.clone_from(&turn.config.mcp_servers);
     config
         .permissions
         .approval_policy

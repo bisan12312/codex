@@ -8,6 +8,7 @@ use codex_mcp::ToolInfo;
 use codex_model_provider::create_model_provider;
 use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_protocol::ThreadId;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::openai_models::ApplyPatchToolType;
@@ -15,6 +16,8 @@ use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ToolMode;
 use codex_protocol::openai_models::WebSearchToolType;
+use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
 use codex_tools::DiscoverablePluginInfo;
 use codex_tools::DiscoverableTool;
 use codex_tools::ResponsesApiNamespaceTool;
@@ -1815,6 +1818,39 @@ async fn multi_agent_v2_message_schemas_are_encrypted() {
                 .get("message")
                 .and_then(|schema| schema.encrypted),
             Some(true)
+        );
+    }
+}
+
+#[tokio::test]
+async fn multi_agent_v2_max_depth_child_keeps_management_tools_without_spawn_agent() {
+    let plan = probe(|turn| {
+        set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
+        update_config(turn, |config| {
+            config.agent_max_depth = 1;
+        });
+        turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+            parent_thread_id: ThreadId::new(),
+            depth: 1,
+            agent_path: None,
+            agent_nickname: None,
+            agent_role: None,
+        });
+    })
+    .await;
+
+    let functions = plan.namespace_function_names(MULTI_AGENT_V2_NAMESPACE);
+    assert!(!functions.iter().any(|name| name == "spawn_agent"));
+    for management_tool in [
+        "send_message",
+        "followup_task",
+        "wait_agent",
+        "interrupt_agent",
+        "list_agents",
+    ] {
+        assert!(
+            functions.iter().any(|name| name == management_tool),
+            "expected management tool `{management_tool}` at the spawn-depth limit"
         );
     }
 }

@@ -2477,6 +2477,46 @@ async fn spawn_agent_respects_legacy_max_threads_alias() {
 }
 
 #[tokio::test]
+async fn spawn_agent_control_rejects_depth_beyond_configured_limit() {
+    let (_home, mut config) = test_config().await;
+    config.agent_max_depth = 1;
+    let manager = ThreadManager::with_models_provider_and_home_for_tests(
+        CodexAuth::from_api_key("dummy"),
+        config.model_provider.clone(),
+        config.codex_home.to_path_buf(),
+        std::sync::Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+    );
+    let control = manager.agent_control();
+    let root = manager
+        .start_thread(StartThreadOptions::new(config.clone()))
+        .await
+        .expect("start root thread");
+
+    let err = control
+        .spawn_agent(
+            config,
+            text_input("nested child"),
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id: root.thread_id,
+                depth: 2,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            })),
+        )
+        .await
+        .expect_err("AgentControl should enforce max depth for every spawn path");
+    let CodexErrorDetails::InvalidRequest(message) = err.details() else {
+        panic!("expected InvalidRequest depth error");
+    };
+    assert_eq!(
+        message,
+        "Agent depth limit reached. Solve the task yourself."
+    );
+    assert_eq!(manager.list_thread_ids().await, vec![root.thread_id]);
+}
+
+#[tokio::test]
 async fn spawn_agent_releases_slot_after_shutdown() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
