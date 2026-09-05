@@ -813,7 +813,7 @@ pub struct AgentsToml {
     #[serde(alias = "max_threads")]
     #[schemars(range(min = 1))]
     pub max_concurrent_threads_per_session: Option<usize>,
-    /// Maximum nesting depth for V1 agent threads. Ignored by V2.
+    /// Maximum nesting depth for V1 and V2 agent threads.
     pub max_depth: Option<i32>,
     /// Default model for spawned subagents when the spawn call does not select one.
     pub default_subagent_model: Option<String>,

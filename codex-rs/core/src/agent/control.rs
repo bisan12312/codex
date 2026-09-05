@@ -2,6 +2,7 @@ use crate::TurnInputRequest;
 use crate::TurnInputSubmission;
 use crate::TurnStartOptions;
 use crate::agent::AgentStatus;
+use crate::agent::registry::exceeds_thread_spawn_depth_limit;
 use crate::agent::role::DEFAULT_ROLE_NAME;
 use crate::agent::role::resolve_role_config;
 use crate::agent::status::is_final;
@@ -628,6 +629,11 @@ impl LocalAgentControl {
         agent_role: Option<String>,
         preferred_agent_nickname: Option<String>,
     ) -> CodexResult<(SessionSource, AgentMetadata)> {
+        if exceeds_thread_spawn_depth_limit(depth, config.agent_max_depth) {
+            return Err(CodexErr::InvalidRequest(
+                "Agent depth limit reached. Solve the task yourself.".to_string(),
+            ));
+        }
         if depth == 1 {
             self.runtime.registry.register_root_thread(parent_thread_id);
         }

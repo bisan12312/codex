@@ -200,6 +200,9 @@ async fn v2_nested_spawn_checks_shared_active_execution_capacity() -> Result<()>
                 .enable(Feature::MultiAgentV2)
                 .expect("test config should allow feature update");
             config.multi_agent_v2.max_concurrent_threads_per_session = 2;
+            // The nested spawn must clear the depth ceiling to reach the
+            // shared capacity check under test.
+            config.agent_max_depth = 2;
         });
     let test = builder.build(&server).await?;
     test.submit_turn(FIRST_PROMPT).await?;
@@ -984,3 +987,100 @@ async fn tree_shutdown_reports_persistence_writer_failure() -> Result<()> {
 
 #[path = "agent_mailbox.rs"]
 mod agent_mailbox;
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn v2_nested_spawn_enforces_configured_depth_limit() -> Result<()> {
+    let server = start_mock_server().await;
+    let first_args = serde_json::to_string(&json!({
+        "message": FIRST_TASK,
+        "task_name": "first",
+    }))?;
+    mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| body_contains(request, FIRST_PROMPT),
+        sse(vec![
+            ev_response_created("depth-first-response"),
+            ev_function_call_with_namespace(
+                "depth-first-call",
+                MULTI_AGENT_V2_NAMESPACE,
+                "spawn_agent",
+                &first_args,
+            ),
+            ev_completed("depth-first-response"),
+        ]),
+    )
+    .await;
+    let second_args = serde_json::to_string(&json!({
+        "message": SECOND_TASK,
+        "task_name": "second",
+    }))?;
+    mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            body_contains(request, FIRST_TASK)
+                && !has_function_call_output(request, "depth-first-call")
+        },
+        sse(vec![
+            ev_response_created("depth-worker-response"),
+            ev_function_call_with_namespace(
+                "depth-second-call",
+                MULTI_AGENT_V2_NAMESPACE,
+                "spawn_agent",
+                &second_args,
+            ),
+            ev_completed("depth-worker-response"),
+        ]),
+    )
+    .await;
+    let second_followup = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| has_function_call_output(request, "depth-second-call"),
+        sse(vec![
+            ev_response_created("depth-second-followup-response"),
+            ev_assistant_message("depth-second-followup-message", "blocked"),
+            ev_completed("depth-second-followup-response"),
+        ]),
+    )
+    .await;
+    mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| has_function_call_output(request, "depth-first-call"),
+        sse(vec![
+            ev_response_created("depth-first-followup-response"),
+            ev_assistant_message("depth-first-followup-message", "spawned"),
+            ev_completed("depth-first-followup-response"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_model("koffing").with_config(|config| {
+        config
+            .features
+            .enable(Feature::Collab)
+            .expect("test config should allow feature update");
+        config
+            .features
+            .enable(Feature::MultiAgentV2)
+            .expect("test config should allow feature update");
+        config.agent_max_depth = 1;
+        config.multi_agent_v2.max_concurrent_threads_per_session = 5;
+    });
+    let test = builder.build(&server).await?;
+    test.submit_turn(FIRST_PROMPT).await?;
+
+    let second_output = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(output) = second_followup.function_call_output_text("depth-second-call") {
+                return output;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await?;
+    assert!(
+        second_output.starts_with("unsupported call:"),
+        "the max-depth child must not expose the V2 spawn tool: {second_output}"
+    );
+    assert_eq!(test.thread_manager.list_thread_ids().await.len(), 2);
+
+    Ok(())
+}

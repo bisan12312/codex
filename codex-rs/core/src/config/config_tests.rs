@@ -13306,6 +13306,30 @@ max_concurrent_threads_per_session = 7
 }
 
 #[tokio::test]
+async fn protected_four_worker_limit_maps_to_five_total_v2_threads() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join(CONFIG_TOML_FILE),
+        r#"[agents]
+max_concurrent_threads_per_session = 4
+"#,
+    )?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .build()
+        .await?;
+    assert_eq!(config.multi_agent_v2.max_concurrent_threads_per_session, 5);
+    assert_eq!(
+        config.effective_agent_max_threads(MultiAgentVersion::V2),
+        Some(4)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn catalog_v2_allows_agents_thread_limit_when_feature_disabled() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(

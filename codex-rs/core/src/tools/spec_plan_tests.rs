@@ -2928,6 +2928,39 @@ async fn multi_agent_v2_message_schemas_are_encrypted() {
 }
 
 #[tokio::test]
+async fn multi_agent_v2_max_depth_child_keeps_management_tools_without_spawn_agent() {
+    let plan = probe(|turn| {
+        set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
+        update_config(turn, |config| {
+            config.agent_max_depth = 1;
+        });
+        turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+            parent_thread_id: ThreadId::new(),
+            depth: 1,
+            agent_path: None,
+            agent_nickname: None,
+            agent_role: None,
+        });
+    })
+    .await;
+
+    let functions = plan.namespace_function_names(MULTI_AGENT_V2_NAMESPACE);
+    assert!(!functions.iter().any(|name| name == "spawn_agent"));
+    for management_tool in [
+        "send_message",
+        "followup_task",
+        "wait_agent",
+        "interrupt_agent",
+        "list_agents",
+    ] {
+        assert!(
+            functions.iter().any(|name| name == management_tool),
+            "expected management tool `{management_tool}` at the spawn-depth limit"
+        );
+    }
+}
+
+#[tokio::test]
 async fn multi_agent_v2_can_disable_wait_agent() {
     let plan = probe(|turn| {
         set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
@@ -3118,6 +3151,9 @@ async fn multi_agent_v2_bedrock_workers_only_delegate_when_model_supports_v2() {
             set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
             update_config(turn, |config| {
                 config.multi_agent_v2.tool_namespace = Some("agents".to_string());
+                // This probe runs as a depth-1 worker; allow one more level so
+                // model support, not the depth ceiling, decides delegation.
+                config.agent_max_depth = 2;
             });
             use_bedrock_provider(turn);
             update_turn_settings_for_test(turn, |settings| {

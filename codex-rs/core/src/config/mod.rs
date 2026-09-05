@@ -1017,7 +1017,7 @@ pub struct Config {
     /// Whether to record a model-visible message when an agent turn is interrupted.
     pub agent_interrupt_message_enabled: bool,
 
-    /// Maximum nesting depth for V1 agent threads. Ignored by V2.
+    /// Maximum nesting depth for V1 and V2 agent threads.
     pub agent_max_depth: i32,
 
     /// User-defined role declarations keyed by role name.
