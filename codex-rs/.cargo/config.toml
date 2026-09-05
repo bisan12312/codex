@@ -9,3 +9,11 @@ rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "link-arg=/arm64hazardfree"]
 
 [target.'cfg(all(windows, target_env = "gnu"))']
 rustflags = ["-C", "link-arg=-Wl,--stack,8388608"]
+
+# The code-mode host (required since 0.153 for every tool call) links V8 with
+# the sandbox feature. denoland publishes no ptrcomp_sandbox prebuilt, so use
+# OpenAI's own build (github.com/openai/codex release rusty-v8-v150.4.0),
+# vendored and checksum-verified under ~/.codex/vendor/rusty-v8.
+[env]
+RUSTY_V8_ARCHIVE = "/Users/adamidrees/.codex/vendor/rusty-v8/v150.4.0/librusty_v8_ptrcomp_sandbox_release_aarch64-apple-darwin.a.gz"
+RUSTY_V8_SRC_BINDING_PATH = "/Users/adamidrees/.codex/vendor/rusty-v8/v150.4.0/src_binding_ptrcomp_sandbox_release_aarch64-apple-darwin.rs"
