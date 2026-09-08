@@ -26,6 +26,7 @@ mod startup_launch;
 mod thread_list;
 pub(crate) mod user_message_submission;
 mod web_search;
+mod writer_handoff;
 
 #[cfg(test)]
 #[path = "app_server_session/collaboration_catalog_tests.rs"]
