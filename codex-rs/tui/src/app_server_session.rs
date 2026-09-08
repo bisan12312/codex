@@ -7,6 +7,7 @@ mod fs;
 mod history;
 mod models;
 mod rollout_history;
+mod writer_handoff;
 
 pub(crate) use history::HISTORY_ITEM_PAGE_LIMIT;
 pub(crate) use history::HISTORY_ITEM_SCAN_LIMIT;

@@ -9,6 +9,7 @@ use super::bootstrap_request_error;
 use super::is_history_pagination_unsupported;
 use super::started_thread_from_resume_response;
 use super::thread_resume_params_from_config;
+use super::writer_handoff;
 use crate::legacy_core::config::Config;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
@@ -118,6 +119,26 @@ impl AppServerSession {
             {
                 self.history_support = ThreadHistorySupport::LegacyOnly;
                 params.exclude_turns = false;
+                let request_id = self.next_request_id();
+                self.client
+                    .request_typed(ClientRequest::ThreadResume { request_id, params })
+                    .await
+                    .map_err(|err| {
+                        bootstrap_request_error("thread/resume failed during TUI bootstrap", err)
+                    })?
+            }
+            Err(err) if writer_handoff::is_active_writer_conflict(&err) => {
+                // Another Codex on this machine (a Codex Phone pane, typically) still
+                // has the thread open: ask it to /exit while it is idle, then resume here.
+                if let Err(handoff) =
+                    writer_handoff::take_over_thread(config.codex_home.as_path(), thread_id).await
+                {
+                    return Err(bootstrap_request_error(
+                        "thread/resume failed during TUI bootstrap",
+                        err,
+                    )
+                    .wrap_err(handoff));
+                }
                 let request_id = self.next_request_id();
                 self.client
                     .request_typed(ClientRequest::ThreadResume { request_id, params })
