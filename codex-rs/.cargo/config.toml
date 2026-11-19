@@ -3,6 +3,14 @@ target-dir = "/Users/adamidrees/local terminal/.build-cache/codex-target"
 jobs = 1
 incremental = false
 
+[net]
+# Since 0.170.0 the v8 crate is a git patch (openai-oss-forks/rusty_v8) whose
+# Chromium submodules come from chromium.googlesource.com. Cargo's built-in
+# git (libgit2 over SecureTransport) stalled there for good on 2026-11-19
+# ("spurious network error ... connection closed", 0% CPU for 13 minutes);
+# the git command line fetches them.
+git-fetch-with-cli = true
+
 [env]
 # Roughly one arena per four CPUs reduces idle RSS after Linux musl conversations unload.
 JEMALLOC_SYS_WITH_MALLOC_CONF = "narenas_ratio:0.25"
