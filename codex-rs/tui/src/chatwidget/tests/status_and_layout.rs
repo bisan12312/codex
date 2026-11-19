@@ -4133,7 +4133,7 @@ async fn status_line_reset_forecast_rearms_deadline_after_competing_draw() {
     let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(16);
     chat.frame_requester = FrameRequester::new(draw_tx);
     while rx.try_recv().is_ok() {}
-    chat.config.tui_status_line = Some(vec!["reset-forecast".to_string()]);
+    chat.local_settings.tui.status_line = Some(vec!["reset-forecast".to_string()]);
 
     chat.refresh_status_line();
     let request_id = take_reset_forecast_request_id(&mut rx);
