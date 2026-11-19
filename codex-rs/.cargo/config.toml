@@ -8,6 +8,20 @@ CFLAGS_aarch64_pc_windows_msvc = "-DCURL_ENABLE_NTLM"
 CFLAGS_x86_64_pc_windows_gnullvm = "-DCURL_ENABLE_NTLM"
 CFLAGS_x86_64_pc_windows_msvc = "-DCURL_ENABLE_NTLM"
 
+# The code-mode host (required since 0.153 for every tool call) links V8 with
+# the sandbox feature. denoland publishes no ptrcomp_sandbox prebuilt, so use
+# OpenAI's own build (github.com/openai/codex release rusty-v8-v152.2.0, the
+# v8 crate of rust-v0.170.0), vendored and checksum-verified under
+# ~/.codex/vendor/rusty-v8. One [env] table: a second one is a TOML error.
+RUSTY_V8_ARCHIVE = "/Users/adamidrees/.codex/vendor/rusty-v8/v152.2.0/librusty_v8_ptrcomp_sandbox_release_aarch64-apple-darwin.a.gz"
+RUSTY_V8_SRC_BINDING_PATH = "/Users/adamidrees/.codex/vendor/rusty-v8/v152.2.0/src_binding_ptrcomp_sandbox_release_aarch64-apple-darwin.rs"
+
+[net]
+# Since 0.170.0 the v8 crate is a git patch whose Chromium submodules come from
+# chromium.googlesource.com, where cargo's built-in git (libgit2) stalled for
+# good; the git command line fetches them.
+git-fetch-with-cli = true
+
 [target.'cfg(all(windows, target_env = "msvc"))']
 rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "target-feature=+crt-static"]
 
@@ -19,11 +33,3 @@ rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "link-arg=/arm64hazardfree"]
 
 [target.'cfg(all(windows, target_env = "gnu"))']
 rustflags = ["-C", "link-arg=-Wl,--stack,8388608"]
-
-# The code-mode host (required since 0.153 for every tool call) links V8 with
-# the sandbox feature. denoland publishes no ptrcomp_sandbox prebuilt, so use
-# OpenAI's own build (github.com/openai/codex release rusty-v8-v150.4.0),
-# vendored and checksum-verified under ~/.codex/vendor/rusty-v8.
-[env]
-RUSTY_V8_ARCHIVE = "/Users/adamidrees/.codex/vendor/rusty-v8/v150.4.0/librusty_v8_ptrcomp_sandbox_release_aarch64-apple-darwin.a.gz"
-RUSTY_V8_SRC_BINDING_PATH = "/Users/adamidrees/.codex/vendor/rusty-v8/v150.4.0/src_binding_ptrcomp_sandbox_release_aarch64-apple-darwin.rs"
