@@ -2473,7 +2473,7 @@ command = "/usr/bin/true"
         .start_thread(StartThreadOptions::new(config.clone()))
         .await
         .expect("root thread should start");
-    session.services.agent_control = manager.agent_control();
+    set_agent_control(&mut session, manager.agent_control());
     session.thread_id = root.thread_id;
     set_turn_config(&mut turn, config);
 
@@ -2663,7 +2663,7 @@ async fn multi_agent_v2_spawn_agent_allows_configured_depth_boundary() {
         .start_thread(StartThreadOptions::new(config.clone()))
         .await
         .expect("root thread should start");
-    session.services.agent_control = manager.agent_control();
+    set_agent_control(&mut session, manager.agent_control());
     session.thread_id = root.thread_id;
     set_turn_config(&mut turn, config);
 
