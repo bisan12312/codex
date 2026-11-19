@@ -1758,6 +1758,8 @@ async fn cold_resume_with_thread_instructions_preserves_lazy_v2_child_inheritanc
     nested: bool,
 ) {
     let (home, mut config) = test_config().await;
+    // The nested cases spawn a grandchild.
+    config.agent_max_depth = 2;
     let _ = config.features.enable(Feature::MultiAgentV2);
     let _ = config.features.enable(Feature::Sqlite);
     let admitted_country = RequestCountry::from_iso_code("DE").unwrap();

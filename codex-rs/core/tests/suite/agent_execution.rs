@@ -1017,7 +1017,7 @@ async fn v2_nested_spawn_enforces_configured_depth_limit() -> Result<()> {
         &server,
         |request: &wiremock::Request| {
             body_contains(request, FIRST_TASK)
-                && !has_function_call_output(request, "depth-first-call")
+                && body_contains(request, r#"\"agent_name\":\"/root/first\""#)
         },
         sse(vec![
             ev_response_created("depth-worker-response"),
@@ -1043,7 +1043,10 @@ async fn v2_nested_spawn_enforces_configured_depth_limit() -> Result<()> {
     .await;
     mount_sse_once_match(
         &server,
-        |request: &wiremock::Request| has_function_call_output(request, "depth-first-call"),
+        |request: &wiremock::Request| {
+            has_function_call_output(request, "depth-first-call")
+                && body_contains(request, r#"\"agent_name\":\"/root\""#)
+        },
         sse(vec![
             ev_response_created("depth-first-followup-response"),
             ev_assistant_message("depth-first-followup-message", "spawned"),
@@ -1052,7 +1055,7 @@ async fn v2_nested_spawn_enforces_configured_depth_limit() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_model("koffing").with_config(|config| {
+    let mut builder = test_codex().with_model("gpt-5.6-sol").with_config(|config| {
         config
             .features
             .enable(Feature::Collab)
