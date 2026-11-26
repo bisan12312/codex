@@ -1,0 +1,74 @@
+name: Local Terminal status-line runtime
+
+on:
+  push:
+    branches: [build/statusline-0.172.0]
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      CARGO_BUILD_JOBS: 1
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_CI_TEST_DEBUG: 0
+      RUST_MIN_STACK: 8388608
+      RUST_TEST_THREADS: 1
+      INSTA_UPDATE: no
+      HOMEBREW_NO_AUTO_UPDATE: 1
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Install test tools and verified V8 assets
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          brew install just cargo-nextest
+          mkdir -p "$RUNNER_TEMP/rusty-v8"
+          gh release download rusty-v8-v152.2.0 --repo openai/codex --dir "$RUNNER_TEMP/rusty-v8" \
+            --pattern 'librusty_v8_ptrcomp_sandbox_release_aarch64-apple-darwin.a.gz' \
+            --pattern 'src_binding_ptrcomp_sandbox_release_aarch64-apple-darwin.rs' \
+            --pattern 'rusty_v8_ptrcomp_sandbox_release_aarch64-apple-darwin.sha256'
+          cd "$RUNNER_TEMP/rusty-v8"
+          shasum -a 256 -c rusty_v8_ptrcomp_sandbox_release_aarch64-apple-darwin.sha256
+          printf 'RUSTY_V8_ARCHIVE=%s/librusty_v8_ptrcomp_sandbox_release_aarch64-apple-darwin.a.gz\n' "$PWD" >> "$GITHUB_ENV"
+          printf 'RUSTY_V8_SRC_BINDING_PATH=%s/src_binding_ptrcomp_sandbox_release_aarch64-apple-darwin.rs\n' "$PWD" >> "$GITHUB_ENV"
+      - name: Focused status-line, command, resume and handoff tests
+        timeout-minutes: 70
+        run: |
+          set -euo pipefail
+          just test --cargo-profile ci-test -p codex-tui --lib \
+            -E 'test(status_line) | test(status_surface) | test(slash_) | test(resume) | test(forecast) | test(fast_mode) | test(claude_style) | test(testloop) | test(setup_view) | test(writer_handoff)'
+          just test --cargo-profile ci-test -p codex-core --test all \
+            -E 'test(pre_sampling_compact_falls_back)'
+      - name: Build both required executables
+        timeout-minutes: 85
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo build --locked --release -p codex-cli -p codex-code-mode-host --bin codex --bin codex-code-mode-host
+          target/release/codex --version
+          for command in testloop1 testloop2 testloop3 testloop4 testloop5 testloopstop1 testloopstop2 testloopstop3 testloopstop4 testloopstop5; do
+            grep -aFq "$command" target/release/codex
+          done
+          for marker in reset-forecast willcodexquotareset.com/api/forecast refresh-codex-reset-forecast scripts/thread-writer-handoff; do
+            grep -aFq "$marker" target/release/codex
+          done
+          mkdir -p ../statusline-runtime
+          cp target/release/codex target/release/codex-code-mode-host ../statusline-runtime/
+          git rev-parse HEAD > ../statusline-runtime/source-commit.txt
+          cd ../statusline-runtime
+          shasum -a 256 codex codex-code-mode-host > SHA256SUMS
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: local-statusline-macos-arm64
+          path: statusline-runtime
+          if-no-files-found: error
+          retention-days: 2
